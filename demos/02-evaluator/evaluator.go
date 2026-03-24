@@ -1,8 +1,9 @@
 package evaluator
 
 import (
-	core "poker/demos/01-core"
 	"sort"
+
+	core "github.com/lllllan02/texas-holdem/demos/01-core"
 )
 
 // HandRank 牌型等级枚举

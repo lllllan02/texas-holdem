@@ -1,9 +1,9 @@
 package evaluator
 
 import (
-	core "poker/demos/01-core"
 	"testing"
 
+	core "github.com/lllllan02/texas-holdem/demos/01-core"
 	"github.com/stretchr/testify/assert"
 )
 

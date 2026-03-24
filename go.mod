@@ -1,4 +1,4 @@
-module poker
+module github.com/lllllan02/texas-holdem
 
 go 1.21.13
 
