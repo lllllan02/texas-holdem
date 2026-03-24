@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Fingerprint Demo</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f0f2f5; }
+        .panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        
+        .user-info { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
+        .user-id { color: #666; font-size: 0.9em; }
+        
+        #messages { height: 400px; overflow-y: scroll; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #fafafa; margin-bottom: 15px; }
+        
+        .msg { margin-bottom: 8px; padding: 8px 12px; border-radius: 4px; font-size: 0.95em; }
+        .msg-time { color: #999; font-size: 0.8em; margin-right: 8px; }
+        .msg-user { font-weight: bold; margin-right: 8px; }
+        .msg.me { background-color: #e3f2fd; border-left: 4px solid #2196f3; }
+        .msg.other { background-color: #fff; border-left: 4px solid #ccc; border: 1px solid #eee; }
+        .msg.system { background-color: transparent; color: #888; font-style: italic; text-align: center; }
+        
+        /* Action Colors */
+        .action-chat { color: #333; }
+        .action-join { color: #2196f3; font-weight: bold; }
+        .action-leave { color: #ff9800; font-weight: bold; }
+        .action-sit { color: #4caf50; font-weight: bold; }
+        .action-bet { color: #f44336; font-weight: bold; }
+        .action-fold { color: #9e9e9e; font-weight: bold; }
+        .action-private { color: #9c27b0; font-weight: bold; font-style: italic; }
+        .action-kick { color: #f44336; font-weight: bold; font-size: 1.2em; }
+
+        .controls { display: flex; gap: 10px; margin-bottom: 15px; }
+        input[type="text"] { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white; transition: opacity 0.2s; }
+        button:hover { opacity: 0.9; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        
+        .btn-send { background-color: #2196f3; }
+        .btn-sit { background-color: #4caf50; }
+        .btn-bet { background-color: #f44336; }
+        .btn-fold { background-color: #9e9e9e; }
+        
+        .action-bar { display: flex; gap: 10px; padding-top: 15px; border-top: 1px solid #eee; }
+    </style>
+</head>
+<body>
+    <div class="panel">
+        <div class="user-info">
+            <h2>德州扑克互动大厅</h2>
+            <div style="text-align: right;">
+                <div id="displayUsername" style="font-weight: bold; font-size: 1.2em; color: #333;"></div>
+                <div id="displayUserId" class="user-id"></div>
+            </div>
+        </div>
+        
+        <div id="messages"></div>
+        
+        <div class="controls">
+            <input type="text" id="msgInput" placeholder="说点什么..." autocomplete="off" disabled>
+            <button id="sendBtn" class="btn-send" disabled>发送</button>
+        </div>
+
+        <div class="action-bar">
+            <button id="sitBtn" class="btn-sit" disabled>🪑 坐下</button>
+            <button id="betBtn" class="btn-bet" disabled>💰 下注 (100)</button>
+            <button id="foldBtn" class="btn-fold" disabled>🏳️ 弃牌</button>
+            <button id="privateBtn" style="background-color: #9c27b0;" disabled>👁️ 看底牌 (私有消息)</button>
+        </div>
+    </div>
+
+    <script>
+        // 1. 指纹识别 (Fingerprint)
+        // 在实际项目中可以使用 FingerprintJS，这里为了演示，使用 localStorage 存储一个持久化的 UUID
+        let userId = localStorage.getItem('poker_uid');
+        let username = localStorage.getItem('poker_uname');
+
+        if (!userId) {
+            // 生成一个随机的访客 ID 和 昵称
+            userId = 'uid_' + Math.random().toString(36).substr(2, 9);
+            username = '游客_' + Math.random().toString(36).substr(2, 4).toUpperCase();
+            localStorage.setItem('poker_uid', userId);
+            localStorage.setItem('poker_uname', username);
+        }
+
+        // 更新 UI
+        document.getElementById('displayUsername').textContent = username;
+        document.getElementById('displayUserId').textContent = 'ID: ' + userId;
+
+        // 2. WebSocket 逻辑
+        const messagesDiv = document.getElementById('messages');
+        const msgInput = document.getElementById('msgInput');
+        const buttons = document.querySelectorAll('button');
+        let ws;
+        let isKicked = false; // 标记是否被踢下线，如果被踢则不再重连
+
+        function appendSystemMessage(text) {
+            const div = document.createElement('div');
+            div.className = 'msg system';
+            div.textContent = text;
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function appendUserMessage(msgObj) {
+            const div = document.createElement('div');
+            const isMe = msgObj.userId === userId;
+            div.className = isMe ? 'msg me' : 'msg other';
+
+            let actionText = '';
+            let actionClass = 'action-chat';
+            
+            switch(msgObj.action) {
+                case 'join': actionText = '加入了大厅'; actionClass = 'action-join'; break;
+                case 'leave': actionText = '离开了大厅'; actionClass = 'action-leave'; break;
+                case 'sit': actionText = '坐下了'; actionClass = 'action-sit'; break;
+                case 'bet': actionText = '下注了 ' + msgObj.content; actionClass = 'action-bet'; break;
+                case 'fold': actionText = '弃牌了'; actionClass = 'action-fold'; break;
+                case 'chat': actionText = ': ' + msgObj.content; break;
+                case 'get_private':
+                    actionText = '【私密】' + msgObj.content; 
+                    actionClass = 'action-private'; 
+                    break;
+                case 'kick': 
+                    actionText = '【警告】' + msgObj.content; 
+                    actionClass = 'action-kick'; 
+                    // 如果被踢，标记状态并主动关闭连接
+                    isKicked = true;
+                    if (ws) ws.close();
+                    break;
+            }
+
+            div.innerHTML = `
+                <span class="msg-time">[${msgObj.time}]</span>
+                <span class="msg-user">${msgObj.username}</span>
+                <span class="${actionClass}">${actionText}</span>
+            `;
+            
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function connect() {
+            // 重置踢出状态
+            isKicked = false;
+            
+            // 将 userId 和 username 通过 URL 参数传给后端
+            const wsUrl = `ws://localhost:8081/ws?userId=${userId}&username=${encodeURIComponent(username)}`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = function() {
+                appendSystemMessage('🟢 已连接到服务器');
+                msgInput.disabled = false;
+                buttons.forEach(btn => btn.disabled = false);
+                
+                // 连接成功后，发送加入大厅的消息，让服务器和其他人知道我来了
+                sendAction('join');
+            };
+
+            ws.onclose = function() {
+                msgInput.disabled = true;
+                buttons.forEach(btn => btn.disabled = true);
+                
+                if (isKicked) {
+                    appendSystemMessage('🔴 连接已断开 (被顶号，停止重连)');
+                } else {
+                    appendSystemMessage('🔴 连接已断开，3秒后重连...');
+                    setTimeout(connect, 3000);
+                }
+            };
+
+            ws.onmessage = function(evt) {
+                try {
+                    const msg = JSON.parse(evt.data);
+                    appendUserMessage(msg);
+                } catch (e) {
+                    console.error("Failed to parse message", evt.data);
+                }
+            };
+        }
+
+        // 3. 发送消息逻辑
+        function sendAction(action, content = "") {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            
+            const payload = {
+                userId: userId,
+                username: username,
+                action: action,
+                content: content
+            };
+            
+            ws.send(JSON.stringify(payload));
+        }
+
+        // 绑定事件
+        document.getElementById('sendBtn').onclick = () => {
+            const text = msgInput.value.trim();
+            if (text) {
+                sendAction('chat', text);
+                msgInput.value = '';
+                msgInput.focus();
+            }
+        };
+
+        msgInput.onkeypress = (e) => {
+            if (e.key === 'Enter') document.getElementById('sendBtn').click();
+        };
+
+        document.getElementById('sitBtn').onclick = () => sendAction('sit');
+        document.getElementById('betBtn').onclick = () => sendAction('bet', '100');
+        document.getElementById('foldBtn').onclick = () => sendAction('fold');
+        document.getElementById('privateBtn').onclick = () => sendAction('get_private');
+
+        // 启动
+        connect();
+    </script>
+</body>
+</html>
