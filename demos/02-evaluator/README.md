@@ -6,9 +6,10 @@
 ## 目录结构建议
 ```text
 poker/
-├── core/
-│   ├── evaluator.go      # 牌型评估算法
-│   ├── evaluator_test.go # 大量的边界测试用例
+├── demos/
+│   ├── 02-evaluator/
+│   │   ├── evaluator.go      # 牌型评估算法
+│   │   ├── evaluator_test.go # 大量的边界测试用例
 ```
 
 ## 核心数据结构设计 (Go)
