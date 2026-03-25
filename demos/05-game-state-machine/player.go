@@ -15,11 +15,12 @@ type Player struct {
 
 	// --- 单局游戏内的状态 (仅当 IsPlaying == true 时有效) ---
 	HoleCards        []core.Card // 底牌（2张）
-	BetThisTurn      int         // 当前这一轮(比如Flop圈)已经下注了多少筹码
+	BetThisRound     int         // 当前这一轮(比如Flop圈)已经下注了多少筹码
 	TotalBetThisHand int         // 本局总共下注的筹码（用于最终计算主池/边池）
 
 	// 玩家当前的操作状态标志位
-	IsFolded bool // 是否已经弃牌
-	IsAllIn  bool // 是否已经 All-in
-	HasActed bool // 在当前下注轮是否已经行动过（用于判断一轮是否结束）
+	IsFolded   bool   // 是否已经弃牌
+	IsAllIn    bool   // 是否已经 All-in
+	HasActed   bool   // 在当前下注轮是否已经行动过（用于判断一轮是否结束）
+	LastAction string // 玩家最后一次执行的动作（如 "Check", "Raise 100"），用于前端展示
 }

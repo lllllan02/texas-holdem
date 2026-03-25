@@ -16,6 +16,7 @@ const (
 	ActionFold  ActionType = "GAME.FOLD"  // 弃牌
 	ActionCheck ActionType = "GAME.CHECK" // 过牌
 	ActionCall  ActionType = "GAME.CALL"  // 跟注
+	ActionBet   ActionType = "GAME.BET"   // 下注 (当前轮没人下注时)
 	ActionRaise ActionType = "GAME.RAISE" // 加注
 )
 
@@ -24,5 +25,9 @@ const (
 type PlayerAction struct {
 	PlayerID string
 	Action   ActionType
-	Amount   int // 目标总额 (Target Total Bet)。例如当前最高下注是50，你之前下了20，想Raise到100，这里传100。
+	// Amount 表示目标总额 (Target Total Bet)。
+	// 例如：盲注是 10/20。当前最高下注是 50。
+	// 你之前已经下注了 20，现在你想加注，你传过来的 Amount 应该是 100（意味着你这局总共要下 100），
+	// 而不是传 50（加注的差额）。后端会根据 Amount - BetThisRound 来扣除你的筹码。
+	Amount int
 }

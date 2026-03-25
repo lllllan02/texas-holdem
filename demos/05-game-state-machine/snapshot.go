@@ -27,8 +27,9 @@ type PlayerSnapshot struct {
 	IsDisconnect     bool        `json:"isDisconnect"`
 	IsFolded         bool        `json:"isFolded"`
 	IsAllIn          bool        `json:"isAllIn"`
-	BetThisTurn      int         `json:"betThisTurn"`
+	BetThisRound     int         `json:"betThisRound"`
 	TotalBetThisHand int         `json:"totalBetThisHand"`
+	LastAction       string      `json:"lastAction"`
 	
 	// 核心脱敏字段：
 	// 如果是自己，或者是 Showdown 阶段亮牌了，这里会有具体的牌。
@@ -61,8 +62,9 @@ func (t *Table) GetSnapshot(requestingPlayerID string) TableSnapshot {
 			IsDisconnect:     p.IsDisconnect,
 			IsFolded:         p.IsFolded,
 			IsAllIn:          p.IsAllIn,
-			BetThisTurn:      p.BetThisTurn,
+			BetThisRound:     p.BetThisRound,
 			TotalBetThisHand: p.TotalBetThisHand,
+			LastAction:       p.LastAction,
 		}
 
 		// 核心防作弊逻辑：底牌可见性控制
