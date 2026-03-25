@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Demo 06 - 房间管理与联机大厅</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .panel { border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+        #log { height: 300px; overflow-y: scroll; border: 1px solid #eee; padding: 10px; background: #f9f9f9; }
+        .msg { margin-bottom: 5px; font-size: 14px; }
+        .system { color: #888; }
+    </style>
+</head>
+<body>
+
+<h1>德州扑克 - 联机大厅模拟</h1>
+
+<div class="panel">
+    <h3>加入房间</h3>
+    <label>玩家 ID: <input type="text" id="playerId" value="player1"></label>
+    <label>房间号: <input type="text" id="roomId" value="888888"></label>
+    <button id="connectBtn" onclick="connect()">连接 / 加入房间</button>
+    <button id="disconnectBtn" onclick="disconnect()" disabled>断开连接</button>
+</div>
+
+<div class="panel">
+    <h3>游戏操作 (模拟)</h3>
+    <button onclick="sendAction('start')" disabled class="action-btn">开始游戏</button>
+    <button onclick="sendAction('call')" disabled class="action-btn">跟注 (Call)</button>
+    <button onclick="sendAction('fold')" disabled class="action-btn">弃牌 (Fold)</button>
+</div>
+
+<div class="panel">
+    <h3>消息日志</h3>
+    <div id="log"></div>
+</div>
+
+<script>
+    let ws = null;
+
+    function log(msg, isSystem = false) {
+        const logDiv = document.getElementById('log');
+        const p = document.createElement('div');
+        p.className = 'msg' + (isSystem ? ' system' : '');
+        p.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        logDiv.appendChild(p);
+        logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function connect() {
+        const playerId = document.getElementById('playerId').value;
+        const roomId = document.getElementById('roomId').value;
+        
+        if (!playerId || !roomId) {
+            alert("请输入玩家 ID 和房间号");
+            return;
+        }
+
+        const wsUrl = `ws://${window.location.host}/ws?room=${roomId}&player=${playerId}`;
+        log(`正在连接到房间 ${roomId}...`, true);
+        
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = function() {
+            log(`连接成功！已加入房间 ${roomId}`, true);
+            document.getElementById('connectBtn').disabled = true;
+            document.getElementById('disconnectBtn').disabled = false;
+            document.querySelectorAll('.action-btn').forEach(btn => btn.disabled = false);
+        };
+
+        ws.onmessage = function(evt) {
+            log(`收到消息: ${evt.data}`);
+        };
+
+        ws.onclose = function() {
+            log("连接已断开", true);
+            document.getElementById('connectBtn').disabled = false;
+            document.getElementById('disconnectBtn').disabled = true;
+            document.querySelectorAll('.action-btn').forEach(btn => btn.disabled = true);
+            ws = null;
+        };
+
+        ws.onerror = function(err) {
+            log(`WebSocket 错误`, true);
+        };
+    }
+
+    function disconnect() {
+        if (ws) {
+            ws.close();
+        }
+    }
+
+    function sendAction(action) {
+        if (!ws) return;
+        const msg = JSON.stringify({ action: action });
+        // ws.send(msg); // 骨架阶段暂不发送真实数据，仅打印日志
+        log(`模拟发送操作: ${action}`);
+    }
+</script>
+
+</body>
+</html>
