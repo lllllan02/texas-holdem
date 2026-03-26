@@ -362,6 +362,37 @@
         }
         document.getElementById('currentRoom').innerText = roomText;
         
+        // 渲染游戏状态信息 (德州扑克特有)
+        const gameStateDiv = document.getElementById('gameStateInfo');
+        if (state.gameState) {
+            let gsHtml = `
+                <div style="margin-top: 10px; padding: 10px; background: #e8f5e9; border-radius: 4px;">
+                    <strong>游戏配置:</strong> 盲注 ${state.gameState.smallBlind}/${state.gameState.bigBlind} | 初始筹码 ${state.gameState.initialChips} <br>
+            `;
+            
+            if (state.gameState.round) {
+                const r = state.gameState.round;
+                gsHtml += `<strong>当前阶段:</strong> ${r.stage} <br>`;
+                gsHtml += `<strong>奖池:</strong> ${r.pots ? r.pots.join(', ') : '0'} <br>`;
+                gsHtml += `<strong>公共牌:</strong> ${r.communityCards ? r.communityCards.map(c => c.Suit + c.Rank).join(' ') : '无'} <br>`;
+                gsHtml += `<strong>最高下注:</strong> ${r.highestBet} <br>`;
+            } else {
+                gsHtml += `<strong>当前阶段:</strong> WAITING (等待开始) <br>`;
+            }
+            gsHtml += `</div>`;
+            
+            if (!gameStateDiv) {
+                const div = document.createElement('div');
+                div.id = 'gameStateInfo';
+                div.innerHTML = gsHtml;
+                document.getElementById('currentRoom').parentNode.appendChild(div);
+            } else {
+                gameStateDiv.innerHTML = gsHtml;
+            }
+        } else if (gameStateDiv) {
+            gameStateDiv.innerHTML = '';
+        }
+
         // 渲染玩家列表 (从 state.players 渲染所有在房间内的人)
         const playersUl = document.getElementById('players');
         playersUl.innerHTML = '';
@@ -384,6 +415,23 @@
                     if (seatIndex !== -1) {
                         const seatInfo = state.gameState.seats[seatIndex];
                         text += ` [座位 ${seatIndex}] ($${seatInfo.chips})`;
+                        
+                        if (state.gameState.round) {
+                            if (seatIndex === state.gameState.round.smallBlindIdx) text += ` (SB)`;
+                            if (seatIndex === state.gameState.round.bigBlindIdx) text += ` (BB)`;
+                            if (seatIndex === state.gameState.buttonIdx) text += ` (庄)`;
+                            if (seatIndex === state.gameState.round.currentTurn) text += ` 👈 (说话中)`;
+                        }
+                        
+                        if (seatInfo.holeCards) {
+                            text += ` [底牌: ${seatInfo.holeCards.map(c => c.Suit + c.Rank).join(' ')}]`;
+                        } else if (state.gameState.round && state.gameState.round.stage !== 'WAITING' && seatInfo.status === 0 && !seatInfo.isFolded) {
+                            text += ` [底牌: 🂠 🂠]`;
+                        }
+                        
+                        if (seatInfo.lastAction) {
+                            text += ` - ${seatInfo.lastAction}`;
+                        }
                     } else {
                         text += ` [旁观]`;
                     }

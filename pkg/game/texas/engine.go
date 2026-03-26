@@ -61,10 +61,8 @@ func (e *Engine) broadcastDefault(playerID string, action string, content string
 
 // GetState 获取当前游戏状态快照
 func (e *Engine) GetState(playerID string) any {
-	// 这里返回一个通用的状态对象，实际项目中应该返回 Table 的完整快照
-	return map[string]any{
-		"game":    "texas",
-		"stage":   "WAITING",
-		"message": "这是德州扑克的恢复状态",
+	if e.Table == nil {
+		return nil
 	}
+	return e.Table.GetSnapshot(playerID)
 }
