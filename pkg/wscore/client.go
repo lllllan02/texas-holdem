@@ -2,6 +2,7 @@ package wscore
 
 import (
 	"log"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -39,6 +40,9 @@ type Client struct {
 
 	// 强类型的业务上下文数据
 	context any
+
+	// 确保 Close 逻辑只执行一次
+	closeOnce sync.Once
 }
 
 // GetID 获取客户端 ID
@@ -56,16 +60,31 @@ func (c *Client) SendMessage(message []byte) {
 	select {
 	case c.send <- message:
 	default:
-		// 如果发送失败，说明通道阻塞（客户端卡死），直接通过 Unregister 踢掉
-		c.hub.unregister <- c
+		// 如果发送失败，说明通道阻塞（客户端卡死），尝试通知 Hub 踢掉
+		c.Close()
 	}
 }
 
 // Close 主动断开连接。
-// 注意：这只是向 Hub 发送注销信号，真正的底层连接关闭会在 WritePump 退出时发生。
+//
+// 完整的关闭流程如下：
+//  1. 调用 c.Close() 向 Hub 发送注销信号 (c.hub.unregister <- c)。
+//  2. Hub 收到信号后，从 clients 映射中移除该客户端，并关闭 c.send 通道。
+//     - 注意：必须由 Hub 来关闭 c.send，因为 Hub 是唯一向 c.send 发送数据的生产者，
+//     - Go 语言原则：永远只在发送端关闭通道，以避免 panic: send on closed channel
+//  3. WritePump 监听到 c.send 被关闭，向客户端发送 WebSocket Close 帧。
+//  4. WritePump 退出循环，触发 defer 关闭底层的 TCP 连接 (c.conn.Close())。
+//  5. 底层连接关闭导致 ReadPump 中的 ReadMessage 阻塞返回错误。
+//  6. ReadPump 退出循环，触发 defer，整个客户端生命周期安全结束。
 func (c *Client) Close() {
-	// 委托给 Hub 处理，保证并发安全
-	c.hub.unregister <- c
+	c.closeOnce.Do(func() {
+		// 委托给 Hub 处理，保证并发安全
+		select {
+		case c.hub.unregister <- c:
+		case <-c.hub.destroy:
+			// Hub 已停止，无需注销
+		}
+	})
 }
 
 // NewClient 创建一个新的 WebSocket 客户端实例
@@ -84,8 +103,7 @@ func NewClient(id string, conn *websocket.Conn, hub *Hub, handler MessageHandler
 // 它必须运行在一个独立的 Goroutine 中。
 func (c *Client) ReadPump() {
 	defer func() {
-		// 退出时通知 Hub 注销该客户端
-		c.hub.unregister <- c
+		c.Close()
 		c.conn.Close()
 	}()
 
@@ -121,6 +139,7 @@ func (c *Client) WritePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
+		c.Close() // 确保即使是 Write 异常退出，也能通知 Hub 清理资源
 		c.conn.Close()
 	}()
 

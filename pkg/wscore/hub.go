@@ -36,6 +36,14 @@ func NewHub() *Hub {
 // Run 启动 Hub 的事件循环。
 // 它必须运行在一个独立的 Goroutine 中。
 func (h *Hub) Run() {
+	// 退出时确保清理所有连接
+	defer func() {
+		for c := range h.clients {
+			h.removeClient(c)
+		}
+		log.Println("Hub: Destroyed")
+	}()
+
 	for {
 		select {
 		case c := <-h.register:
@@ -48,16 +56,7 @@ func (h *Hub) Run() {
 			}
 
 		case c := <-h.unregister:
-			if _, ok := h.clients[c]; ok {
-				delete(h.clients, c)
-				close(c.send)
-				log.Printf("Hub: Client [%s] unregistered. Total: %d", c.id, len(h.clients))
-
-				// 通知业务层：连接断开
-				if c.handler != nil {
-					go c.handler.OnDisconnect(c)
-				}
-			}
+			h.removeClient(c)
 
 		case message := <-h.broadcast:
 			// 广播消息给所有连接的客户端
@@ -66,24 +65,12 @@ func (h *Hub) Run() {
 				case c.send <- message:
 				default:
 					// 如果发送通道已满或阻塞，说明客户端卡死，强制关闭
-					close(c.send)
-					delete(h.clients, c)
-					if c.handler != nil {
-						c.handler.OnDisconnect(c)
-					}
+					h.removeClient(c)
 				}
 			}
-			
+
 		case <-h.destroy:
-			// 销毁 Hub，关闭所有连接
-			for c := range h.clients {
-				close(c.send)
-				delete(h.clients, c)
-				if c.handler != nil {
-					go c.handler.OnDisconnect(c)
-				}
-			}
-			log.Println("Hub: Destroyed")
+			// 收到销毁信号，退出事件循环，触发 defer 清理
 			return
 		}
 	}
@@ -91,10 +78,29 @@ func (h *Hub) Run() {
 
 // BroadcastMessage 向 Hub 中的所有客户端广播消息。
 func (h *Hub) BroadcastMessage(message []byte) {
-	h.broadcast <- message
+	select {
+	case h.broadcast <- message:
+	case <-h.destroy:
+		// 如果 Hub 已经停止，直接丢弃消息，避免阻塞
+	}
 }
 
 // Stop 停止 Hub 并断开所有连接。
 func (h *Hub) Stop() {
 	close(h.destroy)
+}
+
+// removeClient 从 Hub 中移除客户端并清理资源。
+// 注意：该方法只能在 Hub.Run 的 Goroutine 中调用，以保证并发安全。
+func (h *Hub) removeClient(c *Client) {
+	if _, ok := h.clients[c]; !ok {
+		return // 避免重复关闭
+	}
+
+	delete(h.clients, c)
+	close(c.send)
+	log.Printf("Hub: Client [%s] unregistered. Total: %d", c.id, len(h.clients))
+	if c.handler != nil {
+		go c.handler.OnDisconnect(c)
+	}
 }
