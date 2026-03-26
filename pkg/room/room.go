@@ -1,0 +1,258 @@
+package room
+
+import (
+	"encoding/json"
+	"log"
+	"sync"
+	"time"
+
+	"github.com/lllllan02/texas-holdem/pkg/wscore"
+)
+
+// Room 房间实体，负责管理房间内的物理连接和生命周期
+type Room struct {
+	// 房间的唯一标识
+	id string
+
+	// 房主的唯一标识，拥有解散房间、开始游戏等特权
+	hostID string
+
+	// 注入的游戏引擎，负责处理具体的游戏逻辑（如德州扑克、斗地主等）
+	engine GameEngine
+
+	// WebSocket 连接管理器，负责维护房间内所有玩家的长连接并处理消息广播
+	hub *wscore.Hub
+
+	// 房间管理器引用，用于在房间空闲时通知管理器销毁自己
+	manager *RoomManager
+
+	// 保护 users 和 joinOrder 等状态的互斥锁
+	mu sync.Mutex
+
+	// 当前在房间内的在线玩家集合，Key 为玩家 ID
+	users map[string]*wscore.Client
+
+	// 记录玩家加入房间的顺序，用于在房主掉线时按顺序顺延移交房主权限
+	joinOrder []string
+
+	// 房间空闲回收定时器：当房间内没有玩家时启动，超时后自动销毁房间
+	roomRecycleTimer *time.Timer
+
+	// 房主转移定时器：当房主掉线时启动，超时后将房主权限移交给下一个玩家
+	hostTransferTimer *time.Timer
+}
+
+// destroy 销毁房间，清理相关资源。
+// 这是一个内部方法，只能由 RoomManager 的 RemoveRoom 调用，
+// 外部业务层如果想销毁房间，应该调用 manager.RemoveRoom(roomID)。
+func (r *Room) destroy() {
+	r.roomRecycleTimer.Stop()
+	r.hostTransferTimer.Stop()
+	r.hub.Stop()
+	
+	if r.engine != nil {
+		r.engine.OnDestroy()
+	}
+}
+
+// GetID 获取房间 ID
+func (r *Room) GetID() string {
+	return r.id
+}
+
+// GetHostID 获取房主 ID
+func (r *Room) GetHostID() string {
+	return r.hostID
+}
+
+// GetHub 获取房间的 WebSocket Hub（供 API 层接入连接使用）
+func (r *Room) GetHub() *wscore.Hub {
+	return r.hub
+}
+
+// Broadcast 向房间内所有客户端广播消息
+func (r *Room) Broadcast(senderID string, action string, content string) {
+	outBytes := BuildServerMessage(senderID, action, content)
+	r.hub.BroadcastMessage(outBytes)
+}
+
+// SendTo 向指定的客户端发送单播消息
+func (r *Room) SendTo(playerID string, action string, content string) {
+	r.mu.Lock()
+	client, ok := r.users[playerID]
+	r.mu.Unlock()
+
+	if ok {
+		outBytes := BuildServerMessage("", action, content)
+		client.SendMessage(outBytes)
+	}
+}
+
+// KickPlayer 踢出指定玩家（断开其连接）
+func (r *Room) KickPlayer(playerID string, reason string) {
+	r.mu.Lock()
+	client, ok := r.users[playerID]
+	r.mu.Unlock()
+
+	if ok {
+		if reason != "" {
+			outBytes := BuildServerMessage("", ActionKick, reason)
+			client.SendMessage(outBytes)
+		}
+		client.Close()
+	}
+}
+
+// NewRoom 创建一个新房间
+func NewRoom(id string, hostID string, engine GameEngine, manager *RoomManager) *Room {
+	rm := &Room{
+		id:        id,
+		hostID:    hostID,
+		engine:    engine,
+		manager:   manager,
+		users:     make(map[string]*wscore.Client),
+		joinOrder: make([]string, 0),
+		hub:       wscore.NewHub(),
+	}
+
+	rm.roomRecycleTimer = time.AfterFunc(time.Hour*24, rm.handleRoomRecycleTimeout)
+	rm.hostTransferTimer = time.AfterFunc(time.Hour*24, rm.handleHostTransferTimeout)
+	rm.roomRecycleTimer.Stop()
+	rm.hostTransferTimer.Stop()
+
+	if rm.engine != nil {
+		rm.engine.OnInit(rm)
+	}
+
+	go rm.hub.Run()
+	return rm
+}
+
+func (r *Room) handleRoomRecycleTimeout() {
+	log.Printf("房间 [%s] 长期空闲，自动回收\n", r.id)
+	go r.manager.RemoveRoom(r.id)
+}
+
+func (r *Room) handleHostTransferTimeout() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if len(r.users) > 0 {
+		var newHost string
+		for _, id := range r.joinOrder {
+			if _, online := r.users[id]; online {
+				newHost = id
+				break
+			}
+		}
+
+		if newHost != "" && newHost != r.hostID {
+			r.hostID = newHost
+			log.Printf("房间 [%s] 房主转移给 [%s]\n", r.id, newHost)
+
+			r.Broadcast("", ActionHostChanged, "原房主掉线，房主已自动转移给 "+newHost)
+		}
+	}
+}
+
+// OnConnect 实现 wscore.MessageHandler 接口，处理客户端连接
+func (r *Room) OnConnect(client *wscore.Client) {
+	r.mu.Lock()
+
+	// 顶号逻辑
+	if oldClient, ok := r.users[client.GetID()]; ok {
+		outBytes := BuildServerMessage("", ActionKick, "您的账号在其他地方登录，您已被强制下线。")
+		oldClient.SendMessage(outBytes)
+		oldClient.Close()
+	}
+
+	r.users[client.GetID()] = client
+
+	// 记录加入顺序
+	found := false
+	for _, id := range r.joinOrder {
+		if id == client.GetID() {
+			found = true
+			break
+		}
+	}
+	if !found {
+		r.joinOrder = append(r.joinOrder, client.GetID())
+	}
+
+	// 停止定时器
+	r.roomRecycleTimer.Stop()
+	if client.GetID() == r.hostID {
+		r.hostTransferTimer.Stop()
+	}
+
+	r.mu.Unlock()
+
+	log.Printf("玩家 [%s] 加入了房间 [%s]\n", client.GetID(), r.id)
+
+	r.Broadcast(client.GetID(), ActionJoin, "加入了房间")
+
+	if r.engine != nil {
+		r.engine.OnPlayerJoin(client.GetID())
+
+		state := r.engine.GetState(client.GetID())
+		stateBytes, _ := json.Marshal(state)
+		r.SendTo(client.GetID(), ActionSyncState, string(stateBytes))
+	}
+}
+
+// OnMessage 实现 wscore.MessageHandler 接口，处理客户端消息
+func (r *Room) OnMessage(client *wscore.Client, message []byte) {
+	var msg ClientMessage
+	if err := json.Unmarshal(message, &msg); err != nil {
+		log.Printf("消息解析失败: %v", err)
+		return
+	}
+
+	switch msg.Action {
+	case ActionChat:
+		r.Broadcast(client.GetID(), ActionChat, msg.Content)
+	case ActionLeave:
+		// 客户端主动请求离开房间，直接关闭其连接。
+		// 底层连接关闭后，会自动触发 OnDisconnect 走统一的清理和广播流程。
+		client.Close()
+	default:
+		if r.engine != nil {
+			r.engine.HandleMessage(client.GetID(), msg.Action, msg.Content)
+		}
+	}
+}
+
+// OnDisconnect 实现 wscore.MessageHandler 接口，处理客户端断开
+func (r *Room) OnDisconnect(client *wscore.Client) {
+	r.mu.Lock()
+
+	// 只有当断开的连接是当前记录的连接时，才执行清理（防止顶号时旧连接断开误删新连接）
+	if r.users[client.GetID()] == client {
+		delete(r.users, client.GetID())
+
+		// 如果房间空了，启动回收定时器
+		if len(r.users) == 0 {
+			r.roomRecycleTimer.Reset(30 * time.Second)
+		} else if client.GetID() == r.hostID {
+			// 如果房主掉线且房间还有人，启动房主转移定时器
+			r.hostTransferTimer.Reset(15 * time.Second)
+		}
+	} else {
+		// 如果不是当前有效连接（比如被顶号踢掉的旧连接），直接忽略，不广播离开消息
+		r.mu.Unlock()
+		return
+	}
+
+	r.mu.Unlock()
+
+	log.Printf("玩家 [%s] 断开了与房间 [%s] 的连接\n", client.GetID(), r.id)
+
+	// 广播玩家离开的消息
+	r.Broadcast(client.GetID(), ActionLeave, "离开了房间")
+
+	// 通知游戏引擎玩家已离开
+	if r.engine != nil {
+		r.engine.OnPlayerLeave(client.GetID())
+	}
+}
