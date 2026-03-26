@@ -43,7 +43,7 @@ func (h *APIHandler) HandleCreateRoom(c *gin.Context) {
 	}
 
 	roomID := generateRoomID()
-	rm, err := h.manager.CreateRoom(roomID, req.UserID, req.GameType)
+	rm, err := h.manager.CreateRoom(roomID, req.UserID, req.GameType, nil)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -116,4 +116,3 @@ func (h *APIHandler) ServeWS(c *gin.Context) {
 
 	log.Printf("玩家 [%s](%s) 成功连接到房间 [%s] 的 WebSocket\n", username, userID, roomID)
 }
-

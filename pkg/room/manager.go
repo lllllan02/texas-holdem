@@ -32,7 +32,7 @@ func (m *RoomManager) RegisterEngine(gameType string, factory EngineFactory) {
 }
 
 // CreateRoom 创建一个新房间
-func (m *RoomManager) CreateRoom(id string, hostID string, gameType string) (*Room, error) {
+func (m *RoomManager) CreateRoom(id string, hostID string, gameType string, param map[string]any) (*Room, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -46,7 +46,7 @@ func (m *RoomManager) CreateRoom(id string, hostID string, gameType string) (*Ro
 	}
 
 	engine := factory()
-	rm := NewRoom(id, hostID, engine, m)
+	rm := NewRoom(id, hostID, engine, param, m)
 	m.rooms[id] = rm
 	return rm, nil
 }
@@ -80,6 +80,7 @@ func (m *RoomManager) DismissRoom(id string, userID string) error {
 	m.RemoveRoom(id)
 	return nil
 }
+
 // RemoveRoom 销毁并移除指定 ID 的房间
 func (m *RoomManager) RemoveRoom(id string) {
 	m.mu.Lock()

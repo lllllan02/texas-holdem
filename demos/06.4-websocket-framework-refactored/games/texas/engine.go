@@ -28,7 +28,7 @@ func NewTexasEngine() *TexasEngine {
 }
 
 // OnInit 房间初始化时调用
-func (e *TexasEngine) OnInit(roomCtx *room.Room) {
+func (e *TexasEngine) OnInit(roomCtx *room.Room, param map[string]any) {
 	e.RoomCtx = roomCtx
 	log.Printf("[TexasEngine] 房间 %s 初始化德州扑克引擎\n", roomCtx.GetID())
 }

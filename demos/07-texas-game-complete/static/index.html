@@ -59,14 +59,28 @@
         </div>
 
         <h3>加入或创建房间</h3>
-        <div style="margin-bottom: 10px; display: flex; gap: 10px; align-items: center;">
-            <select id="gameType" style="padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
-                <option value="texas">德州扑克</option>
-                <option value="uno">UNO (敬请期待)</option>
-            </select>
-            <button id="createRoomBtn" class="btn-sit" onclick="createRoom()">➕ 创建新房间</button>
+        <div style="margin-bottom: 15px; padding: 15px; background: #f9f9f9; border-radius: 8px; border: 1px solid #eee;">
+            <div style="font-weight: bold; margin-bottom: 12px; color: #333;">创建德州扑克房间</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 15px; font-size: 0.95em;">
+                <label style="display: flex; align-items: center; justify-content: space-between;">
+                    指定房间号: <input type="text" id="createRoomId" placeholder="留空自动生成" style="width: 100px; padding: 4px;">
+                </label>
+                <label style="display: flex; align-items: center; justify-content: space-between;">
+                    最大人数: <input type="number" id="maxPlayers" value="9" min="2" max="9" style="width: 70px; padding: 4px;">
+                </label>
+                <label style="display: flex; align-items: center; justify-content: space-between;">
+                    初始筹码: <input type="number" id="initialChips" value="1000" min="100" style="width: 70px; padding: 4px;">
+                </label>
+                <label style="display: flex; align-items: center; justify-content: space-between;">
+                    小盲注: <input type="number" id="smallBlind" value="10" min="1" style="width: 70px; padding: 4px;">
+                </label>
+                <label style="display: flex; align-items: center; justify-content: space-between;">
+                    大盲注: <input type="number" id="bigBlind" value="20" min="2" style="width: 70px; padding: 4px;">
+                </label>
+            </div>
+            <button id="createRoomBtn" class="btn-sit" onclick="createRoom()" style="width: 100%;">➕ 创建新房间</button>
         </div>
-        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px; padding-top: 10px; border-top: 1px solid #eee;">
             <label>房间号: <input type="text" id="roomId" placeholder="输入6位房间号" style="width: 120px;"></label>
             <button id="joinBtn" class="btn-send" onclick="joinRoom()">加入房间</button>
             <button id="disconnectBtn" onclick="disconnect()" style="background-color: #f44336;" disabled>断开连接</button>
@@ -204,12 +218,25 @@
     }
 
     async function createRoom() {
-        const gameType = document.getElementById('gameType').value;
+        const gameType = 'texas'; // 目前固定为德州扑克
+        const customRoomId = document.getElementById('createRoomId').value.trim();
+        const config = {
+            maxPlayers: parseInt(document.getElementById('maxPlayers').value) || 9,
+            initialChips: parseInt(document.getElementById('initialChips').value) || 1000,
+            smallBlind: parseInt(document.getElementById('smallBlind').value) || 10,
+            bigBlind: parseInt(document.getElementById('bigBlind').value) || 20
+        };
+
         try {
             const res = await fetch('/api/create_room', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: userId, gameType: gameType })
+                body: JSON.stringify({ 
+                    roomId: customRoomId, // 允许为空，后端处理
+                    userId: userId, 
+                    gameType: gameType,
+                    config: config // 将配置发送给后端
+                })
             });
             const data = await res.json();
             if (res.ok && data.roomId) {
@@ -335,28 +362,42 @@
         }
         document.getElementById('currentRoom').innerText = roomText;
         
-        // 渲染玩家列表 (这里我们用 state.seats 里的玩家来展示)
+        // 渲染玩家列表 (从 state.players 渲染所有在房间内的人)
         const playersUl = document.getElementById('players');
         playersUl.innerHTML = '';
         
         let hasPlayers = false;
-        if (state.seats) {
-            state.seats.forEach(player => {
-                if (player) {
-                    hasPlayers = true;
-                    const li = document.createElement('li');
-                    let text = `[座位 ${player.seat}] ${player.id} ($${player.chips})`;
-                    if (state.hostId && player.id === state.hostId) {
-                        text = `👑 ` + text;
-                    }
-                    li.innerText = text;
-                    playersUl.appendChild(li);
+        if (state.players && state.players.length > 0) {
+            state.players.forEach(player => {
+                hasPlayers = true;
+                const li = document.createElement('li');
+                let text = player;
+                
+                // 标记房主
+                if (state.hostId && player === state.hostId) {
+                    text = `👑 ` + text;
                 }
+                
+                // 如果游戏状态里有座位信息，可以进一步标注座位
+                if (state.gameState && state.gameState.seats) {
+                    const seatIndex = state.gameState.seats.findIndex(s => s && s.id === player);
+                    if (seatIndex !== -1) {
+                        const seatInfo = state.gameState.seats[seatIndex];
+                        text += ` [座位 ${seatIndex}] ($${seatInfo.chips})`;
+                    } else {
+                        text += ` [旁观]`;
+                    }
+                } else {
+                    text += ` [旁观]`; // 默认没座位就是旁观
+                }
+                
+                li.innerText = text;
+                playersUl.appendChild(li);
             });
         }
         
         if (!hasPlayers) {
-            playersUl.innerHTML = "<li>暂无玩家坐下</li>";
+            playersUl.innerHTML = "<li>暂无玩家</li>";
         }
         
         // 恢复解散房间按钮的逻辑

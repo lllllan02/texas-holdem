@@ -3,7 +3,7 @@ package room
 // GameEngine 抽象游戏引擎接口，任何游戏都可以接入这个房间系统
 type GameEngine interface {
 	// OnInit 房间初始化时调用
-	OnInit(room *Room)
+	OnInit(room *Room, param map[string]any)
 
 	// OnDestroy 房间被销毁时调用，用于清理资源
 	OnDestroy()

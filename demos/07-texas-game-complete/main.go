@@ -16,7 +16,7 @@ func main() {
 
 	// 注册德州扑克游戏引擎
 	manager.RegisterEngine("texas", func() room.GameEngine {
-		return texas.NewTexasEngine()
+		return texas.NewEngine()
 	})
 
 	// 2. 创建 API 处理器

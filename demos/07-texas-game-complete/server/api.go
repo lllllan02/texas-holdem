@@ -33,8 +33,10 @@ func generateRoomID() string {
 // HandleCreateRoom 处理创建房间的 HTTP 请求
 func (h *APIHandler) HandleCreateRoom(c *gin.Context) {
 	var req struct {
-		UserID   string `json:"userId" binding:"required"`
-		GameType string `json:"gameType" binding:"required"` // 指定游戏类型
+		RoomID   string         `json:"roomId"` // 可选的自定义房间号
+		UserID   string         `json:"userId" binding:"required"`
+		GameType string         `json:"gameType" binding:"required"` // 指定游戏类型
+		Config   map[string]any `json:"config"`                      // 游戏配置
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -42,8 +44,12 @@ func (h *APIHandler) HandleCreateRoom(c *gin.Context) {
 		return
 	}
 
-	roomID := generateRoomID()
-	rm, err := h.manager.CreateRoom(roomID, req.UserID, req.GameType)
+	roomID := req.RoomID
+	if roomID == "" {
+		roomID = generateRoomID()
+	}
+
+	rm, err := h.manager.CreateRoom(roomID, req.UserID, req.GameType, req.Config)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -116,4 +122,3 @@ func (h *APIHandler) ServeWS(c *gin.Context) {
 
 	log.Printf("玩家 [%s](%s) 成功连接到房间 [%s] 的 WebSocket\n", username, userID, roomID)
 }
-

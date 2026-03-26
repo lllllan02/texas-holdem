@@ -49,7 +49,7 @@ func (r *Room) destroy() {
 	r.roomRecycleTimer.Stop()
 	r.hostTransferTimer.Stop()
 	r.hub.Stop()
-	
+
 	if r.engine != nil {
 		r.engine.OnDestroy()
 	}
@@ -104,7 +104,7 @@ func (r *Room) KickPlayer(playerID string, reason string) {
 }
 
 // NewRoom 创建一个新房间
-func NewRoom(id string, hostID string, engine GameEngine, manager *RoomManager) *Room {
+func NewRoom(id string, hostID string, engine GameEngine, param map[string]any, manager *RoomManager) *Room {
 	rm := &Room{
 		id:        id,
 		hostID:    hostID,
@@ -121,7 +121,7 @@ func NewRoom(id string, hostID string, engine GameEngine, manager *RoomManager) 
 	rm.hostTransferTimer.Stop()
 
 	if rm.engine != nil {
-		rm.engine.OnInit(rm)
+		rm.engine.OnInit(rm, param)
 	}
 
 	go rm.hub.Run()
@@ -195,7 +195,7 @@ func (r *Room) OnConnect(client *wscore.Client) {
 	if r.engine != nil {
 		r.engine.OnPlayerJoin(client.GetID())
 
-		state := r.engine.GetState(client.GetID())
+		state := r.getFullState(client.GetID())
 		stateBytes, _ := json.Marshal(state)
 		r.SendTo(client.GetID(), ActionSyncState, string(stateBytes))
 	}
@@ -255,4 +255,26 @@ func (r *Room) OnDisconnect(client *wscore.Client) {
 	if r.engine != nil {
 		r.engine.OnPlayerLeave(client.GetID())
 	}
+}
+
+// getFullState 获取完整的房间和游戏状态
+func (r *Room) getFullState(playerID string) map[string]any {
+	r.mu.Lock()
+	players := make([]string, 0, len(r.users))
+	for id := range r.users {
+		players = append(players, id)
+	}
+	r.mu.Unlock()
+
+	state := map[string]any{
+		"roomId":  r.id,
+		"hostId":  r.hostID,
+		"players": players,
+	}
+
+	// 如果有引擎，直接把引擎的状态作为一个独立的字段放进去
+	if r.engine != nil {
+		state["gameState"] = r.engine.GetState(playerID)
+	}
+	return state
 }
