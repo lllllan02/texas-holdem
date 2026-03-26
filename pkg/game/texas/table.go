@@ -1,6 +1,11 @@
 package texas
 
-import "github.com/spf13/cast"
+import (
+	"fmt"
+	"sync"
+
+	"github.com/spf13/cast"
+)
 
 // GameStage 表示一局游戏当前所处的阶段
 type GameStage string
@@ -15,6 +20,8 @@ const (
 )
 
 type Table struct {
+	mu sync.RWMutex
+
 	MaxPlayers int `json:"maxPlayers"`
 
 	Seats   []*Player          `json:"seats"`
@@ -72,11 +79,84 @@ func NewTable(param map[string]any) *Table {
 	}
 }
 
+// SitDown 玩家落座（支持未开始游戏时换座）
+func (t *Table) SitDown(playerID string, seatIdx int) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if seatIdx < 0 || seatIdx >= t.MaxPlayers {
+		return fmt.Errorf("invalid seat index")
+	}
+	if t.Seats[seatIdx] != nil {
+		return fmt.Errorf("seat is already taken")
+	}
+
+	// 检查玩家是否已经坐下
+	if p, exists := t.Players[playerID]; exists {
+		// 如果游戏已经开始，不允许换座
+		if t.Round != nil && t.Round.Stage != StageWaiting {
+			return fmt.Errorf("cannot switch seats during an active game")
+		}
+
+		// 允许换座：先清空原来的座位
+		for i, seat := range t.Seats {
+			if seat != nil && seat.ID == playerID {
+				t.Seats[i] = nil
+				break
+			}
+		}
+		// 坐到新座位
+		t.Seats[seatIdx] = p
+		return nil
+	}
+
+	// 新落座
+	p := NewPlayer(playerID, t.InitialChips)
+	t.Seats[seatIdx] = p
+	t.Players[playerID] = p
+
+	return nil
+}
+
+// StandUp 玩家站起
+func (t *Table) StandUp(playerID string) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	_, exists := t.Players[playerID]
+	if !exists {
+		return fmt.Errorf("player is not seated")
+	}
+
+	// 找到玩家所在的座位并清空
+	for i, seat := range t.Seats {
+		if seat != nil && seat.ID == playerID {
+			t.Seats[i] = nil
+			break
+		}
+	}
+
+	delete(t.Players, playerID)
+	// TODO: 如果游戏正在进行中，站起可能需要自动弃牌等逻辑
+
+	return nil
+}
+
 // GetSnapshot 为指定的玩家生成一份安全的数据快照
 // playerID: 请求这份数据的玩家 ID。如果是旁观者，可以传空字符串 ""
 func (t *Table) GetSnapshot(playerID string) *Table {
-	// 1. 浅拷贝 Table
-	snap := *t
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	// 1. 浅拷贝 Table (不拷贝锁)
+	snap := Table{
+		MaxPlayers:   t.MaxPlayers,
+		SmallBlind:   t.SmallBlind,
+		BigBlind:     t.BigBlind,
+		InitialChips: t.InitialChips,
+		ButtonIdx:    t.ButtonIdx,
+		Round:        t.Round, // Round 内部如果没有锁，这里浅拷贝指针是安全的，因为我们不修改 Round
+	}
 
 	// 2. 隐藏不需要暴露的内部映射（虽然加了 json:"-"，但为了严谨还是置空）
 	snap.Players = nil

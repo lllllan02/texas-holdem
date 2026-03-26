@@ -1,13 +1,16 @@
 package texas
 
 import (
+	"encoding/json"
 	"log"
+	"sync"
 
 	"github.com/lllllan02/texas-holdem/pkg/room"
 )
 
 // Engine 德州扑克游戏引擎，实现了 room.GameEngine 接口
 type Engine struct {
+	mu    sync.Mutex
 	room  *room.Room
 	Table *Table
 }
@@ -44,12 +47,54 @@ func (e *Engine) OnPlayerLeave(playerID string) {
 }
 
 // HandleMessage 处理游戏特定消息
-func (e *Engine) HandleMessage(playerID string, action string, content string) {
+func (e *Engine) HandleMessage(playerID string, action string, content string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	switch action {
+	case "sit":
+		return e.handleSit(playerID, content)
+	case "stand":
+		return e.handleStand(playerID)
 	default:
 		// 未知或未实现的游戏动作，原样广播
 		e.broadcastDefault(playerID, action, content)
+		return false
 	}
+}
+
+func (e *Engine) handleSit(playerID string, content string) bool {
+	var req struct {
+		Seat int `json:"seat"`
+	}
+	if err := json.Unmarshal([]byte(content), &req); err != nil {
+		log.Printf("[TexasEngine] 玩家 %s 坐下参数解析失败: %v\n", playerID, err)
+		return false
+	}
+
+	if err := e.Table.SitDown(playerID, req.Seat); err != nil {
+		log.Printf("[TexasEngine] 玩家 %s 坐下失败: %v\n", playerID, err)
+		// 可以发送一个错误消息给该玩家
+		e.room.SendTo(playerID, "error", `{"message": "`+err.Error()+`"}`)
+		return false
+	}
+
+	log.Printf("[TexasEngine] 玩家 %s 坐下座位 %d\n", playerID, req.Seat)
+
+	// 标记状态已改变，需要广播
+	return true
+}
+
+func (e *Engine) handleStand(playerID string) bool {
+	if err := e.Table.StandUp(playerID); err != nil {
+		log.Printf("[TexasEngine] 玩家 %s 站起失败: %v\n", playerID, err)
+		return false
+	}
+
+	log.Printf("[TexasEngine] 玩家 %s 站起\n", playerID)
+
+	// 标记状态已改变，需要广播
+	return true
 }
 
 // broadcastDefault 默认的广播行为（临时占位，实际应该广播游戏状态快照）

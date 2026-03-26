@@ -15,7 +15,8 @@ type GameEngine interface {
 	OnPlayerLeave(playerID string)
 
 	// HandleMessage 处理客户端发来的游戏特定消息
-	HandleMessage(playerID string, action string, content string)
+	// 返回值表示处理完毕后，是否需要房间广播更新后的游戏状态
+	HandleMessage(playerID string, action string, content string) bool
 
 	// GetState 获取当前游戏状态快照，用于断线重连或新玩家加入时恢复状态
 	GetState(playerID string) any

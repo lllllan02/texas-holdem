@@ -30,17 +30,17 @@ type ClientMessage struct {
 
 // ServerMessage 服务端下发的消息结构
 type ServerMessage struct {
-	Action   string `json:"action"`
-	Content  string `json:"content"`
 	SenderID string `json:"senderId,omitempty"` // 如果是系统消息，则为空
+	Action   string `json:"action"`
+	Content  any    `json:"content"` // 改为 any，这样如果传入的是对象，就不会被转义成字符串
 }
 
 // BuildServerMessage 辅助函数：构建标准服务端消息
-func BuildServerMessage(senderID string, action string, content string) []byte {
+func BuildServerMessage(senderID string, action string, content any) []byte {
 	msg := ServerMessage{
+		SenderID: senderID,
 		Action:   action,
 		Content:  content,
-		SenderID: senderID,
 	}
 	bytes, _ := json.Marshal(msg)
 	return bytes

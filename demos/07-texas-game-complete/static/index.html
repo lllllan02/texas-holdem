@@ -25,6 +25,7 @@
         .action-join { color: #2196f3; font-weight: bold; }
         .action-leave { color: #ff9800; font-weight: bold; }
         .action-sit { color: #4caf50; font-weight: bold; }
+        .action-stand { color: #ff9800; font-weight: bold; }
         .action-bet { color: #f44336; font-weight: bold; }
         .action-fold { color: #9e9e9e; font-weight: bold; }
         .action-private { color: #9c27b0; font-weight: bold; font-style: italic; }
@@ -41,9 +42,66 @@
         
         .btn-send { background-color: #2196f3; }
         .btn-sit { background-color: #4caf50; }
+        .btn-stand { background-color: #ff9800; }
         .btn-bet { background-color: #f44336; }
         .btn-fold { background-color: #9e9e9e; }
         .action-bar { display: flex; gap: 10px; padding-top: 15px; border-top: 1px solid #eee; }
+
+        /* 牌桌与座位样式 */
+        .table-container {
+            margin-top: 20px;
+            padding: 20px;
+            background: #2e7d32; /* 绿色桌布 */
+            border-radius: 100px;
+            border: 10px solid #5d4037; /* 木质桌边 */
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 15px;
+            min-height: 150px;
+            align-items: center;
+        }
+        .seat {
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px dashed rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 0.8em;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .seat:hover {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: white;
+        }
+        .seat.occupied {
+            background: #fff;
+            border: 2px solid #333;
+            color: #333;
+            cursor: default;
+        }
+        .seat.occupied.me {
+            border-color: #2196f3;
+            box-shadow: 0 0 10px #2196f3;
+        }
+        .seat-name {
+            font-weight: bold;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            width: 90%;
+            text-align: center;
+        }
+        .seat-chips {
+            color: #f57c00;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -90,7 +148,13 @@
     <div class="panel">
         <h3>房间状态</h3>
         <p>当前房间: <strong id="currentRoom">未加入</strong></p>
-        <h4>房间内的玩家:</h4>
+        
+        <!-- 牌桌区域 -->
+        <div id="pokerTable" class="table-container" style="display: none;">
+            <!-- 座位将由 JS 动态生成 -->
+        </div>
+
+        <h4 style="margin-top: 20px;">房间内的玩家:</h4>
         <ul id="players" class="player-list">
             <li>暂无玩家</li>
         </ul>
@@ -108,7 +172,7 @@
         </div>
 
         <div class="action-bar">
-            <button id="sitBtn" class="btn-sit" disabled>🪑 坐下</button>
+            <button id="standBtn" class="btn-stand" disabled>🏃 站起</button>
             <button id="betBtn" class="btn-bet" disabled>💰 下注 (100)</button>
             <button id="foldBtn" class="btn-fold" disabled>🏳️ 弃牌</button>
         </div>
@@ -178,31 +242,41 @@
         // 兼容旧的 username 字段，如果没有则使用 senderId
         const displayUser = msgObj.username || msgObj.senderId || '系统';
         
+        // 如果 content 是对象，尝试转成字符串展示，避免 [object Object]
+        let displayContent = msgObj.content;
+        if (typeof displayContent === 'object' && displayContent !== null) {
+            displayContent = JSON.stringify(displayContent);
+        }
+        
         switch(msgObj.action) {
             case 'room.join': actionText = '加入了房间'; actionClass = 'action-join'; break;
             case 'room.leave': actionText = '离开了房间'; actionClass = 'action-leave'; break;
-            case 'texas.sit': actionText = '坐下了'; actionClass = 'action-sit'; break;
-            case 'texas.bet': actionText = '下注了 ' + msgObj.content; actionClass = 'action-bet'; break;
-            case 'texas.fold': actionText = '弃牌了'; actionClass = 'action-fold'; break;
-            case 'room.chat': actionText = ': ' + msgObj.content; break;
+            case 'sit': actionText = '坐下了'; actionClass = 'action-sit'; break;
+            case 'stand': actionText = '站起了'; actionClass = 'action-stand'; break;
+            case 'bet': actionText = '下注了 ' + displayContent; actionClass = 'action-bet'; break;
+            case 'fold': actionText = '弃牌了'; actionClass = 'action-fold'; break;
+            case 'room.chat': actionText = ': ' + displayContent; break;
             case 'room.kick': 
-                actionText = '【警告】' + msgObj.content; 
+                actionText = '【警告】' + displayContent; 
                 actionClass = 'action-kick'; 
                 isKicked = true;
                 if (ws) ws.close();
                 break;
             case 'room.dismissed':
-                actionText = '【系统】' + msgObj.content;
+                actionText = '【系统】' + displayContent;
                 actionClass = 'action-kick';
                 isKicked = true; // 防止重连
                 if (ws) ws.close();
                 if (!isDismissing) {
-                    alert(msgObj.content);
+                    alert(displayContent);
                 }
                 break;
             case 'room.host_changed':
-                actionText = '【系统】' + msgObj.content;
+                actionText = '【系统】' + displayContent;
                 actionClass = 'action-private';
+                break;
+            default:
+                actionText = '未知操作: ' + displayContent;
                 break;
         }
 
@@ -301,15 +375,24 @@
         };
 
         ws.onmessage = function(evt) {
+            let data;
             try {
-                const data = JSON.parse(evt.data);
-                if (data.action === "room.state" || data.action === "room.sync_state") {
+                // 尝试解析外层 JSON
+                data = JSON.parse(evt.data);
+            } catch (e) {
+                console.error("JSON Parse error:", e, evt.data);
+                appendSystemMessage(`收到非 JSON 消息: ${evt.data}`);
+                return;
+            }
+
+            try {
+                if (data.action === "room.state" || data.action === "room.sync_state" || data.action === "game.sync_state") {
                     updateRoomState(data);
                 } else {
                     appendUserMessage(data);
                 }
             } catch (e) {
-                appendSystemMessage(`收到非 JSON 消息: ${evt.data}`);
+                console.error("Error processing message:", e, data);
             }
         };
 
@@ -347,13 +430,36 @@
         localStorage.removeItem('poker_current_room'); // 主动断开时清除记录
     }
 
+    let currentState = {}; // 维护全局状态
+
     function updateRoomState(data) {
-        let state = {};
         try {
-            state = JSON.parse(data.content);
+            // 现在后端传过来的 content 已经是一个干净的 JSON 对象了
+            let parsedContent = data.content;
+            
+            // 为了兼容旧代码，如果还是字符串，尝试解析一下
+            if (typeof data.content === 'string') {
+                try {
+                    parsedContent = JSON.parse(data.content);
+                } catch (e) {
+                    console.error("Failed to parse data.content as JSON:", data.content);
+                    return;
+                }
+            }
+            
+            if (data.action === "game.sync_state") {
+                // 如果是纯游戏状态同步，只更新 gameState 部分
+                currentState.gameState = parsedContent;
+            } else {
+                // 如果是房间状态同步，全量更新
+                currentState = parsedContent;
+            }
         } catch(e) {
+            console.error("Failed to process state content:", e);
             return;
         }
+        
+        const state = currentState;
         
         // 渲染房间信息
         let roomText = state.roomId || document.getElementById('roomId').value;
@@ -364,6 +470,8 @@
         
         // 渲染游戏状态信息 (德州扑克特有)
         const gameStateDiv = document.getElementById('gameStateInfo');
+        const pokerTable = document.getElementById('pokerTable');
+        
         if (state.gameState) {
             let gsHtml = `
                 <div style="margin-top: 10px; padding: 10px; background: #e8f5e9; border-radius: 4px;">
@@ -385,12 +493,73 @@
                 const div = document.createElement('div');
                 div.id = 'gameStateInfo';
                 div.innerHTML = gsHtml;
-                document.getElementById('currentRoom').parentNode.appendChild(div);
+                pokerTable.parentNode.insertBefore(div, pokerTable);
             } else {
                 gameStateDiv.innerHTML = gsHtml;
             }
+
+            // 渲染座位
+            pokerTable.style.display = 'flex';
+            pokerTable.innerHTML = '';
+            const maxPlayers = state.gameState.maxPlayers || 9;
+            const seats = state.gameState.seats || [];
+            
+            let isSeated = false;
+            
+            for (let i = 0; i < maxPlayers; i++) {
+                const seatDiv = document.createElement('div');
+                const seatInfo = seats[i];
+                
+                if (seatInfo) {
+                    // 座位有人
+                    const isMe = seatInfo.id === userId;
+                    if (isMe) isSeated = true;
+                    
+                    seatDiv.className = `seat occupied ${isMe ? 'me' : ''}`;
+                    
+                    let roleStr = '';
+                    if (state.gameState.round) {
+                        if (i === state.gameState.round.smallBlindIdx) roleStr = '(SB)';
+                        if (i === state.gameState.round.bigBlindIdx) roleStr = '(BB)';
+                        if (i === state.gameState.buttonIdx) roleStr = '(庄)';
+                    }
+                    
+                    seatDiv.innerHTML = `
+                        <div class="seat-name">${seatInfo.id === userId ? '我' : seatInfo.id.substring(0,6)} ${roleStr}</div>
+                        <div class="seat-chips">$${seatInfo.chips}</div>
+                    `;
+                    
+                    if (seatInfo.holeCards && seatInfo.holeCards.length > 0) {
+                        seatDiv.innerHTML += `<div>${seatInfo.holeCards.map(c => c.Suit + c.Rank).join('')}</div>`;
+                    } else if (state.gameState.round && state.gameState.round.stage !== 'WAITING' && !seatInfo.isFolded) {
+                        seatDiv.innerHTML += `<div>🂠🂠</div>`;
+                    }
+                } else {
+                    // 空座位
+                    seatDiv.className = 'seat';
+                    seatDiv.innerHTML = `<div>座位 ${i}</div><div>点击坐下</div>`;
+                    seatDiv.onclick = () => {
+                        const isGameRunning = state.gameState.round && state.gameState.round.stage !== 'WAITING';
+                        if (isSeated && isGameRunning) {
+                            alert("游戏进行中，无法换座！");
+                            return;
+                        }
+                        // 发送坐下/换座请求
+                        sendAction('sit', JSON.stringify({ seat: i }));
+                    };
+                }
+                pokerTable.appendChild(seatDiv);
+            }
+            
+            // 更新站起按钮状态
+            const standBtn = document.getElementById('standBtn');
+            if (standBtn) {
+                standBtn.disabled = !isSeated;
+            }
+
         } else if (gameStateDiv) {
             gameStateDiv.innerHTML = '';
+            pokerTable.style.display = 'none';
         }
 
         // 渲染玩家列表 (从 state.players 渲染所有在房间内的人)
@@ -510,9 +679,9 @@
         if (e.key === 'Enter') document.getElementById('sendBtn').click();
     };
 
-    document.getElementById('sitBtn').onclick = () => sendAction('texas.sit');
-    document.getElementById('betBtn').onclick = () => sendAction('texas.bet', '100');
-    document.getElementById('foldBtn').onclick = () => sendAction('texas.fold');
+    document.getElementById('standBtn').onclick = () => sendAction('stand');
+    document.getElementById('betBtn').onclick = () => sendAction('bet', '100');
+    document.getElementById('foldBtn').onclick = () => sendAction('fold');
         // 监听页面关闭/刷新事件，主动断开 WebSocket
         window.addEventListener('beforeunload', function() {
             if (ws) {

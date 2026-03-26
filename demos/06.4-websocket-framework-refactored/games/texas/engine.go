@@ -52,7 +52,7 @@ func (e *TexasEngine) OnPlayerLeave(playerID string) {
 }
 
 // HandleMessage 处理游戏特定消息
-func (e *TexasEngine) HandleMessage(playerID string, action string, content string) {
+func (e *TexasEngine) HandleMessage(playerID string, action string, content string) bool {
 	switch action {
 	case ActionSit:
 		e.handleSit(playerID, action, content)
@@ -64,6 +64,7 @@ func (e *TexasEngine) HandleMessage(playerID string, action string, content stri
 		// 未知或未实现的游戏动作，原样广播
 		e.broadcastDefault(playerID, action, content)
 	}
+	return false
 }
 
 func (e *TexasEngine) handleSit(playerID string, action string, content string) {

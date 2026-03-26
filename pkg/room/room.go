@@ -27,7 +27,7 @@ type Room struct {
 	manager *RoomManager
 
 	// 保护 users 和 joinOrder 等状态的互斥锁
-	mu sync.Mutex
+	mu sync.RWMutex
 
 	// 当前在房间内的在线玩家集合，Key 为玩家 ID
 	users map[string]*wscore.Client
@@ -71,13 +71,13 @@ func (r *Room) GetHub() *wscore.Hub {
 }
 
 // Broadcast 向房间内所有客户端广播消息
-func (r *Room) Broadcast(senderID string, action string, content string) {
+func (r *Room) Broadcast(senderID string, action string, content any) {
 	outBytes := BuildServerMessage(senderID, action, content)
 	r.hub.BroadcastMessage(outBytes)
 }
 
 // SendTo 向指定的客户端发送单播消息
-func (r *Room) SendTo(playerID string, action string, content string) {
+func (r *Room) SendTo(playerID string, action string, content any) {
 	r.mu.Lock()
 	client, ok := r.users[playerID]
 	r.mu.Unlock()
@@ -196,8 +196,7 @@ func (r *Room) OnConnect(client *wscore.Client) {
 		r.engine.OnPlayerJoin(client.GetID())
 
 		state := r.getFullState(client.GetID())
-		stateBytes, _ := json.Marshal(state)
-		r.SendTo(client.GetID(), ActionSyncState, string(stateBytes))
+		r.SendTo(client.GetID(), ActionSyncState, state)
 	}
 }
 
@@ -218,7 +217,16 @@ func (r *Room) OnMessage(client *wscore.Client, message []byte) {
 		client.Close()
 	default:
 		if r.engine != nil {
-			r.engine.HandleMessage(client.GetID(), msg.Action, msg.Content)
+			needsSync := r.engine.HandleMessage(client.GetID(), msg.Action, msg.Content)
+
+			// 每次处理完消息后，检查引擎是否要求同步最新的游戏状态
+			if needsSync {
+				players := r.getPlayers()
+				for _, playerID := range players {
+					state := r.engine.GetState(playerID)
+					r.SendTo(playerID, ActionSyncState, state)
+				}
+			}
 		}
 	}
 }
@@ -259,22 +267,28 @@ func (r *Room) OnDisconnect(client *wscore.Client) {
 
 // getFullState 获取完整的房间和游戏状态
 func (r *Room) getFullState(playerID string) map[string]any {
-	r.mu.Lock()
-	players := make([]string, 0, len(r.users))
-	for id := range r.users {
-		players = append(players, id)
-	}
-	r.mu.Unlock()
-
 	state := map[string]any{
 		"roomId":  r.id,
 		"hostId":  r.hostID,
-		"players": players,
+		"players": r.getPlayers(),
 	}
 
 	// 如果有引擎，直接把引擎的状态作为一个独立的字段放进去
 	if r.engine != nil {
+		// GetState 返回的可能是一个结构体指针，在转 JSON 时会变成对象
 		state["gameState"] = r.engine.GetState(playerID)
 	}
 	return state
+}
+
+// GetPlayers 获取当前房间内所有在线玩家的 ID
+func (r *Room) getPlayers() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	players := make([]string, 0, len(r.users))
+	for id := range r.users {
+		players = append(players, id)
+	}
+	return players
 }
