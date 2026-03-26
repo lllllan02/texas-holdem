@@ -44,7 +44,7 @@ func BuildServerMessage(sender *Client, action string, content string) []byte {
 
 	if sender != nil {
 		msg.UserID = sender.GetID()
-		msg.Username = sender.GetContext().Username
+		msg.Username = sender.GetContext().(*PlayerContext).Username
 	} else {
 		msg.UserID = "system"
 		msg.Username = "系统"

@@ -21,7 +21,7 @@ const (
 
 // Client 包装了一个底层的 WebSocket 连接，负责处理读写循环和心跳。
 // 泛型 T 代表业务层附加的上下文数据类型。
-type Client[T any] struct {
+type Client struct {
 	// 客户端的唯一标识（通常是 UserID）
 	id string
 
@@ -29,30 +29,30 @@ type Client[T any] struct {
 	conn *websocket.Conn
 
 	// 所属的 Hub，用于注册和注销
-	hub *Hub[T]
+	hub *Hub
 
 	// 发送消息的缓冲通道
 	send chan []byte
 
 	// 注入的业务逻辑处理器，当收到消息或断开连接时，调用该处理器的方法
-	handler MessageHandler[T]
+	handler MessageHandler
 
 	// 强类型的业务上下文数据
-	context T
+	context any
 }
 
 // GetID 获取客户端 ID
-func (c *Client[T]) GetID() string {
+func (c *Client) GetID() string {
 	return c.id
 }
 
 // GetContext 获取业务上下文
-func (c *Client[T]) GetContext() T {
+func (c *Client) GetContext() any {
 	return c.context
 }
 
 // SendMessage 安全地向客户端发送消息
-func (c *Client[T]) SendMessage(message []byte) {
+func (c *Client) SendMessage(message []byte) {
 	select {
 	case c.send <- message:
 	default:
@@ -63,26 +63,26 @@ func (c *Client[T]) SendMessage(message []byte) {
 
 // Close 主动断开连接。
 // 注意：这只是向 Hub 发送注销信号，真正的底层连接关闭会在 WritePump 退出时发生。
-func (c *Client[T]) Close() {
+func (c *Client) Close() {
 	// 委托给 Hub 处理，保证并发安全
 	c.hub.unregister <- c
 }
 
 // NewClient 创建一个新的 WebSocket 客户端实例
-func NewClient[T any](id string, conn *websocket.Conn, hub *Hub[T], handler MessageHandler[T]) *Client[T] {
-	return &Client[T]{
+func NewClient(id string, conn *websocket.Conn, hub *Hub, handler MessageHandler) *Client {
+	return &Client{
 		id:      id,
 		conn:    conn,
 		hub:     hub,
 		send:    make(chan []byte, 256),
 		handler: handler,
-		context: *new(T), // 初始化零值，ServeWS 中会覆盖
+		context: *new(any), // 初始化零值，ServeWS 中会覆盖
 	}
 }
 
 // ReadPump 负责从 WebSocket 连接中读取消息。
 // 它必须运行在一个独立的 Goroutine 中。
-func (c *Client[T]) ReadPump() {
+func (c *Client) ReadPump() {
 	defer func() {
 		// 退出时通知 Hub 注销该客户端
 		c.hub.unregister <- c
@@ -117,7 +117,7 @@ func (c *Client[T]) ReadPump() {
 
 // WritePump 负责将消息写入 WebSocket 连接。
 // 它必须运行在一个独立的 Goroutine 中。
-func (c *Client[T]) WritePump() {
+func (c *Client) WritePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()

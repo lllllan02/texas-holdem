@@ -121,7 +121,7 @@ func (m *RoomManager) DismissRoom(roomID string, userID string) error {
 	room.Hub.BroadcastMessage(outBytes)
 	// 关闭所有连接
 	room.Hub.Stop()
-	
+
 	log.Printf("玩家 [%s] 解散了房间: [%s]\n", userID, roomID)
 	return nil
 }

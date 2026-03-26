@@ -13,14 +13,14 @@ type PlayerContext struct {
 	Username string
 }
 
-type Client = wscore.Client[*PlayerContext]
+type Client = wscore.Client
 
 // Room 房间，包含一个游戏桌和一个广播中心
 type Room struct {
 	ID      string
 	HostID  string       // 房主ID
 	Engine  GameEngine   // 抽象的游戏引擎
-	Hub     *wscore.Hub[*PlayerContext] // 该房间专属的 WebSocket 广播中心
+	Hub     *wscore.Hub  // 该房间专属的 WebSocket 广播中心
 	Manager *RoomManager // 引用全局管理器，用于自动回收
 
 	// 房间内的玩家管理
@@ -65,7 +65,7 @@ func (r *Room) broadcastRoomState() {
 
 	players := state["players"].([]string)
 	for _, client := range r.Users {
-		players = append(players, client.GetContext().Username+" ("+client.GetID()+")")
+		players = append(players, client.GetContext().(*PlayerContext).Username+" ("+client.GetID()+")")
 	}
 	state["players"] = players
 
@@ -84,7 +84,7 @@ func NewRoom(id string, hostID string, engine GameEngine, manager *RoomManager) 
 		joinOrder: make([]string, 0),
 	}
 
-	room.Hub = wscore.NewHub[*PlayerContext]()
+	room.Hub = wscore.NewHub()
 	room.roomRecycleTimer = time.AfterFunc(time.Hour*24, room.handleRoomRecycleTimeout)
 	room.hostTransferTimer = time.AfterFunc(time.Hour*24, room.handleHostTransferTimeout)
 	room.roomRecycleTimer.Stop()
@@ -124,7 +124,7 @@ func (r *Room) handleHostTransferTimeout() {
 			r.broadcastRoomState()
 
 			// 广播通知
-			outBytes := BuildServerMessage(nil, ActionHostChanged, "原房主掉线，房主已自动转移给 "+r.Users[newHost].GetContext().Username)
+			outBytes := BuildServerMessage(nil, ActionHostChanged, "原房主掉线，房主已自动转移给 "+r.Users[newHost].GetContext().(*PlayerContext).Username)
 			r.Hub.BroadcastMessage(outBytes)
 		}
 	}
@@ -148,7 +148,7 @@ func (r *Room) RemoveClient(client *Client) {
 
 func (r *Room) OnConnect(client *Client) {
 	r.mu.Lock()
-	
+
 	// 顶号逻辑
 	if oldClient, ok := r.Users[client.GetID()]; ok {
 		// 发送踢出消息
@@ -158,7 +158,7 @@ func (r *Room) OnConnect(client *Client) {
 	}
 
 	r.Users[client.GetID()] = client
-	
+
 	// 记录加入顺序
 	found := false
 	for _, id := range r.joinOrder {
@@ -180,14 +180,14 @@ func (r *Room) OnConnect(client *Client) {
 	r.mu.Unlock()
 
 	log.Printf("玩家 [%s] 加入了房间 [%s]\n", client.GetID(), r.ID)
-	
+
 	// 广播加入消息和房间状态
 	r.Broadcast(client, ActionJoin, "加入了房间")
 	r.broadcastRoomState()
 
 	if r.Engine != nil {
 		r.Engine.OnPlayerJoin(client)
-		
+
 		// 触发状态同步
 		state := r.Engine.GetState(client)
 		stateBytes, _ := json.Marshal(state)
@@ -204,7 +204,7 @@ func (r *Room) OnMessage(client *Client, message []byte) {
 
 	// 强制覆盖为当前客户端的信息，防止伪造
 	msg.UserID = client.GetID()
-	msg.Username = client.GetContext().Username
+	msg.Username = client.GetContext().(*PlayerContext).Username
 
 	switch msg.Action {
 	case ActionChat:
@@ -223,23 +223,23 @@ func (r *Room) OnMessage(client *Client, message []byte) {
 
 func (r *Room) OnDisconnect(client *Client) {
 	r.mu.Lock()
-	
+
 	// 只有当断开的连接是当前记录的连接时，才执行清理
 	// 防止顶号时，旧连接断开导致新连接被误删
 	if r.Users[client.GetID()] == client {
 		delete(r.Users, client.GetID())
-		
+
 		if len(r.Users) == 0 {
 			r.roomRecycleTimer.Reset(30 * time.Second)
 		} else if client.GetID() == r.HostID {
 			r.hostTransferTimer.Reset(15 * time.Second)
 		}
 	}
-	
+
 	r.mu.Unlock()
 
 	log.Printf("玩家 [%s] 断开了与房间 [%s] 的连接\n", client.GetID(), r.ID)
-	
+
 	// 广播离开消息和房间状态
 	r.Broadcast(client, ActionLeave, "离开了房间")
 	r.broadcastRoomState()

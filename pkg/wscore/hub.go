@@ -5,16 +5,15 @@ import "log"
 // Hub 是一个通用的 WebSocket 连接管理器。
 // 它维护了一组活跃的 Client，并处理注册、注销和广播消息。
 // 它是并发安全的，因为所有的操作都在一个单一的 Goroutine 中进行。
-// 泛型 T 代表业务层附加的上下文数据类型。
-type Hub[T any] struct {
+type Hub struct {
 	// 活跃的客户端列表
-	clients map[*Client[T]]bool
+	clients map[*Client]bool
 
 	// 注册通道
-	register chan *Client[T]
+	register chan *Client
 
 	// 注销通道
-	unregister chan *Client[T]
+	unregister chan *Client
 
 	// 广播通道
 	broadcast chan []byte
@@ -24,19 +23,19 @@ type Hub[T any] struct {
 }
 
 // NewHub 创建一个新的 Hub 实例
-func NewHub[T any]() *Hub[T] {
-	return &Hub[T]{
+func NewHub() *Hub {
+	return &Hub{
 		broadcast:  make(chan []byte),
-		register:   make(chan *Client[T]),
-		unregister: make(chan *Client[T]),
-		clients:    make(map[*Client[T]]bool),
+		register:   make(chan *Client),
+		unregister: make(chan *Client),
+		clients:    make(map[*Client]bool),
 		destroy:    make(chan struct{}),
 	}
 }
 
 // Run 启动 Hub 的事件循环。
 // 它必须运行在一个独立的 Goroutine 中。
-func (h *Hub[T]) Run() {
+func (h *Hub) Run() {
 	for {
 		select {
 		case c := <-h.register:
@@ -91,11 +90,11 @@ func (h *Hub[T]) Run() {
 }
 
 // BroadcastMessage 向 Hub 中的所有客户端广播消息。
-func (h *Hub[T]) BroadcastMessage(message []byte) {
+func (h *Hub) BroadcastMessage(message []byte) {
 	h.broadcast <- message
 }
 
 // Stop 停止 Hub 并断开所有连接。
-func (h *Hub[T]) Stop() {
+func (h *Hub) Stop() {
 	close(h.destroy)
 }
