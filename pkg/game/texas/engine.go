@@ -10,14 +10,30 @@ import (
 
 // Engine 德州扑克游戏引擎，实现了 room.GameEngine 接口
 type Engine struct {
-	mu    sync.Mutex
-	room  *room.Room
-	Table *Table
+	mu       sync.Mutex
+	room     *room.Room
+	Table    *Table
+	updateCh chan struct{}
 }
 
 // NewEngine 创建一个新的德州扑克游戏引擎
 func NewEngine() *Engine {
-	return &Engine{}
+	return &Engine{
+		updateCh: make(chan struct{}, 10),
+	}
+}
+
+// UpdateChannel 返回状态更新信号通道
+func (e *Engine) UpdateChannel() <-chan struct{} {
+	return e.updateCh
+}
+
+// triggerSync 触发状态同步广播
+func (e *Engine) triggerSync() {
+	select {
+	case e.updateCh <- struct{}{}:
+	default:
+	}
 }
 
 // OnInit 房间初始化时调用
@@ -47,19 +63,23 @@ func (e *Engine) OnPlayerLeave(playerID string) {
 }
 
 // HandleMessage 处理游戏特定消息
-func (e *Engine) HandleMessage(playerID string, action string, content string) bool {
+func (e *Engine) HandleMessage(playerID string, action string, content string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	changed := false
 	switch action {
 	case "sit":
-		return e.handleSit(playerID, content)
+		changed = e.handleSit(playerID, content)
 	case "stand":
-		return e.handleStand(playerID)
+		changed = e.handleStand(playerID)
 	default:
 		// 未知或未实现的游戏动作，原样广播
 		e.broadcastDefault(playerID, action, content)
-		return false
+	}
+
+	if changed {
+		e.triggerSync()
 	}
 }
 

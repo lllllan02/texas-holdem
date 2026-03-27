@@ -16,15 +16,22 @@ const (
 
 // TexasEngine 德州扑克游戏引擎，实现了 room.GameEngine 接口
 type TexasEngine struct {
-	RoomCtx *room.Room
-	Table   *game.Table
+	RoomCtx  *room.Room
+	Table    *game.Table
+	updateCh chan struct{}
 }
 
 // NewTexasEngine 创建一个新的德州扑克游戏引擎
 func NewTexasEngine() *TexasEngine {
 	return &TexasEngine{
-		Table: &game.Table{},
+		Table:    &game.Table{},
+		updateCh: make(chan struct{}, 10),
 	}
+}
+
+// UpdateChannel 返回状态更新信号通道
+func (e *TexasEngine) UpdateChannel() <-chan struct{} {
+	return e.updateCh
 }
 
 // OnInit 房间初始化时调用
@@ -52,7 +59,7 @@ func (e *TexasEngine) OnPlayerLeave(playerID string) {
 }
 
 // HandleMessage 处理游戏特定消息
-func (e *TexasEngine) HandleMessage(playerID string, action string, content string) bool {
+func (e *TexasEngine) HandleMessage(playerID string, action string, content string) {
 	switch action {
 	case ActionSit:
 		e.handleSit(playerID, action, content)
@@ -64,7 +71,6 @@ func (e *TexasEngine) HandleMessage(playerID string, action string, content stri
 		// 未知或未实现的游戏动作，原样广播
 		e.broadcastDefault(playerID, action, content)
 	}
-	return false
 }
 
 func (e *TexasEngine) handleSit(playerID string, action string, content string) {

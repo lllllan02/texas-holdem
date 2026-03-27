@@ -1,6 +1,7 @@
 package room
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"sync"
@@ -40,12 +41,19 @@ type Room struct {
 
 	// 房主转移定时器：当房主掉线时启动，超时后将房主权限移交给下一个玩家
 	hostTransferTimer *time.Timer
+
+	// 房间生命周期控制
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // destroy 销毁房间，清理相关资源。
 // 这是一个内部方法，只能由 RoomManager 的 RemoveRoom 调用，
 // 外部业务层如果想销毁房间，应该调用 manager.RemoveRoom(roomID)。
 func (r *Room) destroy() {
+	if r.cancel != nil {
+		r.cancel()
+	}
 	r.roomRecycleTimer.Stop()
 	r.hostTransferTimer.Stop()
 	r.hub.Stop()
@@ -105,6 +113,7 @@ func (r *Room) KickPlayer(playerID string, reason string) {
 
 // NewRoom 创建一个新房间
 func NewRoom(id string, hostID string, engine GameEngine, param map[string]any, manager *RoomManager) *Room {
+	ctx, cancel := context.WithCancel(context.Background())
 	rm := &Room{
 		id:        id,
 		hostID:    hostID,
@@ -113,6 +122,8 @@ func NewRoom(id string, hostID string, engine GameEngine, param map[string]any, 
 		users:     make(map[string]*wscore.Client),
 		joinOrder: make([]string, 0),
 		hub:       wscore.NewHub(),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 
 	rm.roomRecycleTimer = time.AfterFunc(time.Hour*24, rm.handleRoomRecycleTimeout)
@@ -122,6 +133,7 @@ func NewRoom(id string, hostID string, engine GameEngine, param map[string]any, 
 
 	if rm.engine != nil {
 		rm.engine.OnInit(rm, param)
+		go rm.watchEngineUpdates()
 	}
 
 	go rm.hub.Run()
@@ -152,6 +164,25 @@ func (r *Room) handleHostTransferTimeout() {
 
 			r.Broadcast("", ActionHostChanged, "原房主掉线，房主已自动转移给 "+newHost)
 		}
+	}
+}
+
+func (r *Room) watchEngineUpdates() {
+	for {
+		select {
+		case <-r.engine.UpdateChannel():
+			r.broadcastState()
+		case <-r.ctx.Done():
+			return
+		}
+	}
+}
+
+func (r *Room) broadcastState() {
+	players := r.getPlayers()
+	for _, playerID := range players {
+		state := r.engine.GetState(playerID)
+		r.SendTo(playerID, ActionSyncState, state)
 	}
 }
 
@@ -217,16 +248,7 @@ func (r *Room) OnMessage(client *wscore.Client, message []byte) {
 		client.Close()
 	default:
 		if r.engine != nil {
-			needsSync := r.engine.HandleMessage(client.GetID(), msg.Action, msg.Content)
-
-			// 每次处理完消息后，检查引擎是否要求同步最新的游戏状态
-			if needsSync {
-				players := r.getPlayers()
-				for _, playerID := range players {
-					state := r.engine.GetState(playerID)
-					r.SendTo(playerID, ActionSyncState, state)
-				}
-			}
+			r.engine.HandleMessage(client.GetID(), msg.Action, msg.Content)
 		}
 	}
 }
