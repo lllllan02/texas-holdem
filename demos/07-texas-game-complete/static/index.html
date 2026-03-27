@@ -4,14 +4,21 @@
     <meta charset="UTF-8">
     <title>Demo 06.2 - 解耦的房间管理与游戏引擎</title>
     <style>
-        body { font-family: Arial, sans-serif; padding: 20px; display: flex; gap: 20px; background-color: #f0f2f5; }
-        .column { flex: 1; }
-        .panel { background: white; border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        body { font-family: Arial, sans-serif; padding: 20px; background-color: #f0f2f5; margin: 0; height: 100vh; box-sizing: border-box; }
+        .main-container { display: grid; grid-template-columns: 350px 1fr; grid-template-rows: auto 1fr; gap: 20px; height: calc(100% - 40px); }
+        .panel { background: white; border: 1px solid #ccc; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; flex-direction: column; }
         
+        .panel-config { grid-column: 1; grid-row: 1; }
+        .panel-table { grid-column: 2; grid-row: 1 / span 2; overflow-y: auto; } /* 牌桌占满右侧或者根据需要调整 */
+        .panel-chat { grid-column: 1; grid-row: 2; }
+        /* 如果要分成4块，牌桌占右上，日志占右下 */
+        .panel-table { grid-column: 2; grid-row: 1; }
+        .panel-syslog { grid-column: 2; grid-row: 2; }
+
         .user-info { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
         .user-id { color: #666; font-size: 0.9em; }
 
-        #log { height: 400px; overflow-y: scroll; border: 1px solid #ddd; padding: 10px; background: #fafafa; border-radius: 4px; }
+        .log-container { flex: 1; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #fafafa; border-radius: 4px; margin-bottom: 10px; min-height: 150px; }
         
         .msg { margin-bottom: 8px; padding: 8px 12px; border-radius: 4px; font-size: 0.95em; }
         .msg-time { color: #999; font-size: 0.8em; margin-right: 8px; }
@@ -19,6 +26,7 @@
         .msg.me { background-color: #e3f2fd; border-left: 4px solid #2196f3; }
         .msg.other { background-color: #fff; border-left: 4px solid #ccc; border: 1px solid #eee; }
         .msg.system { background-color: transparent; color: #888; font-style: italic; text-align: center; }
+        .msg.system-event { background-color: #f9f9f9; border-left: 4px solid #9e9e9e; color: #555; }
         
         /* Action Colors */
         .action-chat { color: #333; }
@@ -34,7 +42,7 @@
         .player-list { list-style: none; padding: 0; }
         .player-list li { padding: 8px; background: #e3f2fd; margin-bottom: 5px; border-radius: 4px; }
 
-        .controls { display: flex; gap: 10px; margin-bottom: 15px; }
+        .controls { display: flex; gap: 10px; margin-top: auto; }
         input[type="text"] { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
         button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white; transition: opacity 0.2s; }
         button:hover { opacity: 0.9; }
@@ -45,7 +53,7 @@
         .btn-stand { background-color: #ff9800; }
         .btn-bet { background-color: #f44336; }
         .btn-fold { background-color: #9e9e9e; }
-        .action-bar { display: flex; gap: 10px; padding-top: 15px; border-top: 1px solid #eee; }
+        .action-bar { display: flex; gap: 10px; padding-top: 15px; border-top: 1px solid #eee; margin-top: 20px; justify-content: center; flex-wrap: wrap; }
 
         /* 牌桌与座位样式 */
         .table-container {
@@ -106,8 +114,9 @@
 </head>
 <body>
 
-<div class="column">
-    <div class="panel">
+<div class="main-container">
+    <!-- 1. 房间配置 -->
+    <div class="panel panel-config">
         <div class="user-info">
             <h2>联机大厅 (Demo 06.2)</h2>
             <div style="text-align: right;">
@@ -135,15 +144,16 @@
             </div>
             <button id="createRoomBtn" class="btn-sit" onclick="createRoom()" style="width: 100%;">➕ 创建新房间</button>
         </div>
-        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px; padding-top: 10px; border-top: 1px solid #eee;">
+        <div style="display: flex; gap: 10px; align-items: center; padding-top: 10px; border-top: 1px solid #eee;">
             <label>房间号: <input type="text" id="roomId" placeholder="输入6位房间号" style="width: 120px;"></label>
             <button id="joinBtn" class="btn-send" onclick="joinRoom()">加入房间</button>
             <button id="disconnectBtn" onclick="disconnect()" style="background-color: #f44336;" disabled>断开连接</button>
         </div>
     </div>
 
-    <div class="panel">
-        <h3>房间状态</h3>
+    <!-- 2. 牌桌信息 -->
+    <div class="panel panel-table">
+        <h3>牌桌信息</h3>
         <p>当前房间: <strong id="currentRoom">未加入</strong></p>
         
         <!-- 牌桌区域 -->
@@ -151,28 +161,34 @@
             <!-- 座位将由 JS 动态生成 -->
         </div>
 
+        <div class="action-bar">
+            <button id="startBtn" class="btn-sit" style="display: none;">▶️ 开始游戏</button>
+            <button id="pauseBtn" class="btn-stand" style="display: none;">⏸️ 暂停游戏</button>
+            <button id="standBtn" class="btn-stand" disabled>🏃 站起</button>
+            <button id="betBtn" class="btn-bet" disabled>💰 下注 (100)</button>
+            <button id="foldBtn" class="btn-fold" disabled>🏳️ 弃牌</button>
+        </div>
+
         <h4 style="margin-top: 20px;">房间内的玩家:</h4>
         <ul id="players" class="player-list">
             <li>暂无玩家</li>
         </ul>
     </div>
-</div>
 
-<div class="column">
-    <div class="panel">
-        <h3>消息大厅</h3>
-        <div id="log"></div>
-        
-        <div class="controls" style="margin-top: 15px;">
+    <!-- 3. 聊天窗口 -->
+    <div class="panel panel-chat">
+        <h3>聊天窗口</h3>
+        <div id="chatLog" class="log-container"></div>
+        <div class="controls">
             <input type="text" id="msgInput" placeholder="说点什么..." autocomplete="off" disabled>
             <button id="sendBtn" class="btn-send" disabled>发送</button>
         </div>
+    </div>
 
-        <div class="action-bar">
-            <button id="standBtn" class="btn-stand" disabled>🏃 站起</button>
-            <button id="betBtn" class="btn-bet" disabled>💰 下注 (100)</button>
-            <button id="foldBtn" class="btn-fold" disabled>🏳️ 弃牌</button>
-        </div>
+    <!-- 4. 系统日志 -->
+    <div class="panel panel-syslog">
+        <h3>系统日志</h3>
+        <div id="sysLog" class="log-container"></div>
     </div>
 </div>
 
@@ -213,7 +229,8 @@
     }
 
     // 3. WebSocket 逻辑
-    const logDiv = document.getElementById('log');
+    const chatLogDiv = document.getElementById('chatLog');
+    const sysLogDiv = document.getElementById('sysLog');
     const msgInput = document.getElementById('msgInput');
     const actionButtons = document.querySelectorAll('.action-bar button, #sendBtn');
     let ws = null;
@@ -224,17 +241,13 @@
         const div = document.createElement('div');
         div.className = 'msg system';
         div.textContent = text;
-        logDiv.appendChild(div);
-        logDiv.scrollTop = logDiv.scrollHeight;
+        sysLogDiv.appendChild(div);
+        sysLogDiv.scrollTop = sysLogDiv.scrollHeight;
     }
 
     function appendUserMessage(msgObj) {
         const div = document.createElement('div');
         const isMe = msgObj.senderId === userId;
-        div.className = isMe ? 'msg me' : 'msg other';
-
-        let actionText = '';
-        let actionClass = 'action-chat';
         
         // 兼容旧的 username 字段，如果没有则使用 senderId
         const displayUser = msgObj.username || msgObj.senderId || '系统';
@@ -245,47 +258,72 @@
             displayContent = JSON.stringify(displayContent);
         }
         
-        switch(msgObj.action) {
-            case 'room.join': actionText = '加入了房间'; actionClass = 'action-join'; break;
-            case 'room.leave': actionText = '离开了房间'; actionClass = 'action-leave'; break;
-            case 'sit': actionText = '坐下了'; actionClass = 'action-sit'; break;
-            case 'stand': actionText = '站起了'; actionClass = 'action-stand'; break;
-            case 'bet': actionText = '下注了 ' + displayContent; actionClass = 'action-bet'; break;
-            case 'fold': actionText = '弃牌了'; actionClass = 'action-fold'; break;
-            case 'room.chat': actionText = ': ' + displayContent; break;
-            case 'room.kick': 
-                actionText = '【警告】' + displayContent; 
-                actionClass = 'action-kick'; 
-                isKicked = true;
-                if (ws) ws.close();
-                break;
-            case 'room.dismissed':
-                actionText = '【系统】' + displayContent;
-                actionClass = 'action-kick';
-                isKicked = true; // 防止重连
-                if (ws) ws.close();
-                if (!isDismissing) {
-                    alert(displayContent);
-                }
-                break;
-            case 'room.host_changed':
-                actionText = '【系统】' + displayContent;
-                actionClass = 'action-private';
-                break;
-            default:
-                actionText = '未知操作: ' + displayContent;
-                break;
-        }
-
         const timeStr = new Date().toLocaleTimeString();
-        div.innerHTML = `
-            <span class="msg-time">[${timeStr}]</span>
-            <span class="msg-user">${displayUser}</span>
-            <span class="${actionClass}">${actionText}</span>
-        `;
-        
-        logDiv.appendChild(div);
-        logDiv.scrollTop = logDiv.scrollHeight;
+
+        if (msgObj.action === 'room.chat') {
+            div.className = isMe ? 'msg me' : 'msg other';
+            div.innerHTML = `
+                <span class="msg-time">[${timeStr}]</span>
+                <span class="msg-user">${displayUser}:</span>
+                <span class="action-chat">${displayContent}</span>
+            `;
+            chatLogDiv.appendChild(div);
+            chatLogDiv.scrollTop = chatLogDiv.scrollHeight;
+        } else {
+            div.className = 'msg system-event';
+            let actionText = '';
+            let actionClass = 'action-chat';
+            
+            switch(msgObj.action) {
+                case 'room.join': actionText = '加入了房间'; actionClass = 'action-join'; break;
+                case 'room.leave': actionText = '离开了房间'; actionClass = 'action-leave'; break;
+                case 'texas.sit': actionText = '坐下了'; actionClass = 'action-sit'; break;
+                case 'texas.stand': actionText = '站起了'; actionClass = 'action-stand'; break;
+                case 'texas.bet': actionText = '下注了 ' + displayContent; actionClass = 'action-bet'; break;
+                case 'texas.fold': actionText = '弃牌了'; actionClass = 'action-fold'; break;
+                case 'texas.start': actionText = '开始了游戏'; actionClass = 'action-sit'; break;
+                case 'texas.pause': actionText = '暂停了游戏'; actionClass = 'action-stand'; break;
+                case 'error': 
+                    let errMsg = displayContent;
+                    try {
+                        let parsed = JSON.parse(displayContent);
+                        if (parsed.message) errMsg = parsed.message;
+                    } catch(e) {}
+                    actionText = '【错误】' + errMsg; 
+                    actionClass = 'action-kick'; 
+                    break;
+                case 'room.kick': 
+                    actionText = '【警告】' + displayContent; 
+                    actionClass = 'action-kick'; 
+                    isKicked = true;
+                    if (ws) ws.close();
+                    break;
+                case 'room.dismissed':
+                    actionText = '【系统】' + displayContent;
+                    actionClass = 'action-kick';
+                    isKicked = true; // 防止重连
+                    if (ws) ws.close();
+                    if (!isDismissing) {
+                        alert(displayContent);
+                    }
+                    break;
+                case 'room.host_changed':
+                    actionText = '【系统】' + displayContent;
+                    actionClass = 'action-private';
+                    break;
+                default:
+                    actionText = '执行了操作: ' + msgObj.action + ' ' + displayContent;
+                    break;
+            }
+
+            div.innerHTML = `
+                <span class="msg-time">[${timeStr}]</span>
+                <span class="msg-user">${displayUser}</span>
+                <span class="${actionClass}">${actionText}</span>
+            `;
+            sysLogDiv.appendChild(div);
+            sysLogDiv.scrollTop = sysLogDiv.scrollHeight;
+        }
     }
 
     async function createRoom() {
@@ -346,7 +384,8 @@
             ws.close();
         }
         // 清空之前的聊天记录
-        logDiv.innerHTML = '';
+        chatLogDiv.innerHTML = '';
+        sysLogDiv.innerHTML = '';
 
         isKicked = false;
         isDismissing = false;
@@ -471,14 +510,18 @@
         const gameStateDiv = document.getElementById('gameStateInfo');
         const pokerTable = document.getElementById('pokerTable');
         
-        if (state.gameState) {
+        if (state.gameState && state.gameState.table) {
+            const table = state.gameState.table;
+            const isRunning = state.gameState.isRunning;
+            
             let gsHtml = `
                 <div style="margin-top: 10px; padding: 10px; background: #e8f5e9; border-radius: 4px;">
-                    <strong>游戏配置:</strong> 盲注 ${state.gameState.smallBlind}/${state.gameState.bigBlind} | 初始筹码 ${state.gameState.initialChips} <br>
+                    <strong>游戏配置:</strong> 盲注 ${table.smallBlind}/${table.bigBlind} | 初始筹码 ${table.initialChips} <br>
+                    <strong>运行状态:</strong> ${isRunning ? '<span style="color:green">运行中</span>' : '<span style="color:red">已暂停</span>'} <br>
             `;
             
-            if (state.gameState.round) {
-                const r = state.gameState.round;
+            if (table.round) {
+                const r = table.round;
                 gsHtml += `<strong>当前阶段:</strong> ${r.stage} <br>`;
                 gsHtml += `<strong>奖池:</strong> ${r.pots ? r.pots.join(', ') : '0'} <br>`;
                 gsHtml += `<strong>公共牌:</strong> ${r.communityCards ? r.communityCards.map(c => c.Suit + c.Rank).join(' ') : '无'} <br>`;
@@ -501,7 +544,7 @@
             pokerTable.style.display = 'flex';
             pokerTable.innerHTML = '';
             const maxPlayers = 9; // 固定 9 人桌
-            const seats = state.gameState.seats || [];
+            const seats = table.seats || [];
             
             let isSeated = false;
             
@@ -518,10 +561,10 @@
                     seatDiv.className = `seat occupied ${isMe ? 'me' : ''}`;
                     
                     let roleStr = '';
-                    if (state.gameState && state.gameState.round) {
-                        if (i === state.gameState.round.smallBlindIdx) roleStr = '(SB)';
-                        if (i === state.gameState.round.bigBlindIdx) roleStr = '(BB)';
-                        if (i === state.gameState.buttonIdx) roleStr = '(庄)';
+                    if (table.round) {
+                        if (i === table.round.smallBlindIdx) roleStr = '(SB)';
+                        if (i === table.round.bigBlindIdx) roleStr = '(BB)';
+                        if (i === table.buttonIdx) roleStr = '(庄)';
                     }
                     
                     seatDiv.innerHTML = `
@@ -531,7 +574,7 @@
                     
                     if (seatInfo.holeCards && seatInfo.holeCards.length > 0) {
                         seatDiv.innerHTML += `<div>${seatInfo.holeCards.map(c => c.Suit + c.Rank).join('')}</div>`;
-                    } else if (state.gameState && state.gameState.round && state.gameState.round.stage !== 'WAITING' && !seatInfo.isFolded) {
+                    } else if (table.round && table.round.stage !== 'WAITING' && !seatInfo.isFolded) {
                         seatDiv.innerHTML += `<div>🂠🂠</div>`;
                     }
                 } else {
@@ -539,13 +582,13 @@
                     seatDiv.className = 'seat';
                     seatDiv.innerHTML = `<div>座位 ${i}</div><div>点击坐下</div>`;
                     seatDiv.onclick = () => {
-                        const isGameRunning = state.gameState && state.gameState.round && state.gameState.round.stage !== 'WAITING';
+                        const isGameRunning = table.round && table.round.stage !== 'WAITING';
                         if (isSeated && isGameRunning) {
                             alert("游戏进行中，无法换座！");
                             return;
                         }
                         // 发送坐下/换座请求
-                        sendAction('sit', JSON.stringify({ seat: i }));
+                        sendAction('texas.sit', JSON.stringify({ seat: i }));
                     };
                 }
                 pokerTable.appendChild(seatDiv);
@@ -579,22 +622,23 @@
                 }
                 
                 // 如果游戏状态里有座位信息，可以进一步标注座位
-                if (state.gameState && state.gameState.seats) {
-                    const seatIndex = state.gameState.seats.findIndex(s => s && typeof s === 'object' && !Array.isArray(s) && s.id === player);
+                if (state.gameState && state.gameState.table && state.gameState.table.seats) {
+                    const table = state.gameState.table;
+                    const seatIndex = table.seats.findIndex(s => s && typeof s === 'object' && !Array.isArray(s) && s.id === player);
                     if (seatIndex !== -1) {
-                        const seatInfo = state.gameState.seats[seatIndex];
+                        const seatInfo = table.seats[seatIndex];
                         text += ` [座位 ${seatIndex}] ($${seatInfo.chips})`;
                         
-                        if (state.gameState && state.gameState.round) {
-                            if (seatIndex === state.gameState.round.smallBlindIdx) text += ` (SB)`;
-                            if (seatIndex === state.gameState.round.bigBlindIdx) text += ` (BB)`;
-                            if (seatIndex === state.gameState.buttonIdx) text += ` (庄)`;
-                            if (seatIndex === state.gameState.round.currentTurn) text += ` 👈 (说话中)`;
+                        if (table.round) {
+                            if (seatIndex === table.round.smallBlindIdx) text += ` (SB)`;
+                            if (seatIndex === table.round.bigBlindIdx) text += ` (BB)`;
+                            if (seatIndex === table.buttonIdx) text += ` (庄)`;
+                            if (seatIndex === table.round.currentTurn) text += ` 👈 (说话中)`;
                         }
                         
                         if (seatInfo.holeCards) {
                             text += ` [底牌: ${seatInfo.holeCards.map(c => c.Suit + c.Rank).join(' ')}]`;
-                        } else if (state.gameState && state.gameState.round && state.gameState.round.stage !== 'WAITING' && seatInfo.status === 0 && !seatInfo.isFolded) {
+                        } else if (table.round && table.round.stage !== 'WAITING' && seatInfo.status === 0 && !seatInfo.isFolded) {
                             text += ` [底牌: 🂠 🂠]`;
                         }
                         
@@ -619,13 +663,33 @@
         
         // 恢复解散房间按钮的逻辑
         const disconnectBtn = document.getElementById('disconnectBtn');
+        const startBtn = document.getElementById('startBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        
         // 这里假设后端状态里有 hostId，如果没有，可以根据其他逻辑判断，或者暂不显示解散
         if (state.hostId && state.hostId === userId) {
             disconnectBtn.innerText = "解散房间";
             disconnectBtn.onclick = dismissRoom;
+            
+            // 房主显示开始/暂停按钮
+            if (state.gameState) {
+                if (state.gameState.isRunning) {
+                    startBtn.style.display = 'none';
+                    pauseBtn.style.display = 'inline-block';
+                    pauseBtn.disabled = false;
+                } else {
+                    startBtn.style.display = 'inline-block';
+                    pauseBtn.style.display = 'none';
+                    startBtn.disabled = false;
+                }
+            }
         } else {
             disconnectBtn.innerText = "断开连接";
             disconnectBtn.onclick = disconnect;
+            
+            // 非房主隐藏开始/暂停按钮
+            startBtn.style.display = 'none';
+            pauseBtn.style.display = 'none';
         }
     }
 
@@ -679,9 +743,11 @@
         if (e.key === 'Enter') document.getElementById('sendBtn').click();
     };
 
-    document.getElementById('standBtn').onclick = () => sendAction('stand');
-    document.getElementById('betBtn').onclick = () => sendAction('bet', '100');
-    document.getElementById('foldBtn').onclick = () => sendAction('fold');
+    document.getElementById('standBtn').onclick = () => sendAction('texas.stand');
+    document.getElementById('betBtn').onclick = () => sendAction('texas.bet', '100');
+    document.getElementById('foldBtn').onclick = () => sendAction('texas.fold');
+    document.getElementById('startBtn').onclick = () => sendAction('texas.start');
+    document.getElementById('pauseBtn').onclick = () => sendAction('texas.pause');
         // 监听页面关闭/刷新事件，主动断开 WebSocket
         window.addEventListener('beforeunload', function() {
             if (ws) {

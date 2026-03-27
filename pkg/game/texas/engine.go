@@ -2,10 +2,19 @@ package texas
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"sync"
 
 	"github.com/lllllan02/texas-holdem/pkg/room"
+)
+
+// 游戏特定的 Action 定义
+const (
+	ActionSit   = "texas.sit"
+	ActionStand = "texas.stand"
+	ActionStart = "texas.start"
+	ActionPause = "texas.pause"
 )
 
 // Engine 德州扑克游戏引擎，实现了 room.GameEngine 接口
@@ -14,12 +23,16 @@ type Engine struct {
 	room     *room.Room
 	Table    *Table
 	updateCh chan struct{}
+
+	// 引擎级控制状态
+	isRunning bool // 房主是否开启了自动流转（初始默认为 false，需房主手动开始）
 }
 
 // NewEngine 创建一个新的德州扑克游戏引擎
 func NewEngine() *Engine {
 	return &Engine{
-		updateCh: make(chan struct{}, 10),
+		updateCh:  make(chan struct{}, 10),
+		isRunning: false, // 初始状态为未运行，等待房主点击开始
 	}
 }
 
@@ -69,10 +82,14 @@ func (e *Engine) HandleMessage(playerID string, action string, content string) {
 
 	changed := false
 	switch action {
-	case "sit":
+	case ActionSit:
 		changed = e.handleSit(playerID, content)
-	case "stand":
+	case ActionStand:
 		changed = e.handleStand(playerID)
+	case ActionStart:
+		changed = e.handleToggleRunning(playerID, true)
+	case ActionPause:
+		changed = e.handleToggleRunning(playerID, false)
 	default:
 		// 未知或未实现的游戏动作，原样广播
 		e.broadcastDefault(playerID, action, content)
@@ -81,6 +98,47 @@ func (e *Engine) HandleMessage(playerID string, action string, content string) {
 	if changed {
 		e.triggerSync()
 	}
+}
+
+func (e *Engine) handleToggleRunning(playerID string, targetState bool) bool {
+	// 只有房主可以控制游戏状态
+	if playerID != e.room.GetHostID() {
+		actionName := "开始"
+		if !targetState {
+			actionName = "暂停"
+		}
+		e.room.SendTo(playerID, "error", fmt.Sprintf(`{"message": "只有房主可以%s游戏"}`, actionName))
+		return false
+	}
+
+	if e.isRunning == targetState {
+		return false // 状态未改变
+	}
+
+	if targetState {
+		// 检查落座人数是否足够（至少需要2人）
+		seatedCount := 0
+		for _, p := range e.Table.Seats {
+			if p != nil {
+				seatedCount++
+			}
+		}
+
+		if seatedCount < 2 {
+			e.room.SendTo(playerID, "error", `{"message": "至少需要2名玩家落座才能开始游戏"}`)
+			return false
+		}
+
+		log.Printf("[TexasEngine] 房间 %s 房主 %s 开始/恢复了游戏\n", e.room.GetID(), playerID)
+		// TODO: 如果当前没有进行中的牌局，则调用 e.Table.StartNewHand()
+	} else {
+		log.Printf("[TexasEngine] 房间 %s 房主 %s 暂停了游戏\n", e.room.GetID(), playerID)
+		// 注意：这里只是设置了标记，不会打断当前正在进行的牌局，
+		// 而是在当前牌局结算（Showdown）后，阻止自动进入下一局。
+	}
+
+	e.isRunning = targetState
+	return true
 }
 
 func (e *Engine) handleSit(playerID string, content string) bool {
@@ -129,5 +187,13 @@ func (e *Engine) GetState(playerID string) any {
 	if e.Table == nil {
 		return nil
 	}
-	return e.Table.GetSnapshot(playerID)
+
+	// 获取 Table 的安全快照
+	snap := e.Table.GetSnapshot(playerID)
+
+	// 包装一层，把引擎级的状态也放进去
+	return map[string]any{
+		"isRunning": e.isRunning,
+		"table":     snap,
+	}
 }
