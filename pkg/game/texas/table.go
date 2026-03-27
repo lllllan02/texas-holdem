@@ -118,6 +118,122 @@ func (t *Table) StandUp(playerID string) error {
 	return nil
 }
 
+// StartNewHand 开启新的一局游戏
+func (t *Table) StartNewHand() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// 1. 检查人数和准备状态
+	activeCount := 0
+	for _, p := range t.Seats {
+		if p != nil {
+			if !p.IsReady {
+				return fmt.Errorf("player %s is not ready", p.ID)
+			}
+			activeCount++
+		}
+	}
+	if activeCount < 2 {
+		return fmt.Errorf("not enough players to start")
+	}
+
+	// 2. 初始化 Round
+	t.Round = &Round{
+		Stage:              StagePreFlop,
+		ActivePlayersCount: activeCount,
+		// TODO: 初始化牌堆、发底牌、扣除盲注等真实逻辑
+	}
+
+	// 临时：随便找个座位作为当前行动者，让前端能显示箭头
+	for i, p := range t.Seats {
+		if p != nil {
+			t.Round.CurrentTurn = i
+			t.Round.LastActionIdx = i // 初始时，LastActionIdx 设为第一个说话的人
+			break
+		}
+	}
+
+	return nil
+}
+
+// nextStageInternal 内部推进阶段方法，不加锁
+func (t *Table) nextStageInternal() {
+	if t.Round == nil {
+		return
+	}
+
+	switch t.Round.Stage {
+	case StagePreFlop:
+		t.Round.Stage = StageFlop
+		// TODO: 发3张公共牌
+	case StageFlop:
+		t.Round.Stage = StageTurn
+		// TODO: 发第4张公共牌
+	case StageTurn:
+		t.Round.Stage = StageRiver
+		// TODO: 发第5张公共牌
+	case StageRiver:
+		t.Round.Stage = StageShowdown
+		// TODO: 结算比牌
+	case StageShowdown:
+		t.Round.Stage = StageWaiting
+		// 暂时不将 t.Round 置为 nil，保留上一局的最终状态供前端展示
+		// t.Round = nil // 牌局结束
+		// TODO: 移动庄家按钮 (ButtonIdx)
+		
+		// 重置所有玩家的准备状态和弃牌状态
+		for _, p := range t.Seats {
+			if p != nil {
+				p.IsReady = false
+				p.IsFolded = false
+			}
+		}
+	}
+}
+
+// NextStage 推进游戏阶段
+func (t *Table) NextStage() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.nextStageInternal()
+}
+
+// AdvanceTurn 推进当前说话玩家，如果一圈结束，则调用 NextStage
+func (t *Table) AdvanceTurn() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.Round == nil {
+		return
+	}
+
+	// 简单的轮转逻辑：找到下一个未弃牌的玩家
+	startIdx := t.Round.CurrentTurn
+	nextIdx := (startIdx + 1) % MaxTableSeats
+
+	for nextIdx != startIdx {
+		p := t.Seats[nextIdx]
+		if p != nil && !p.IsFolded {
+			t.Round.CurrentTurn = nextIdx
+			
+			// 骨架逻辑：如果转到了 LastActionIdx（一圈结束），就进入下一阶段
+			// 假设 LastActionIdx 初始为庄家后面的那个人
+			if nextIdx == t.Round.LastActionIdx {
+				t.nextStageInternal()
+				// 进入新阶段后，需要重置 LastActionIdx
+				if t.Round != nil {
+					t.Round.LastActionIdx = t.Round.CurrentTurn
+				}
+			}
+			return
+		}
+		nextIdx = (nextIdx + 1) % MaxTableSeats
+	}
+
+	// 如果只剩一个人没弃牌，直接结束
+	t.nextStageInternal()
+}
+
 // GetSnapshot 为指定的玩家生成一份安全的数据快照
 // playerID: 请求这份数据的玩家 ID。如果是旁观者，可以传空字符串 ""
 func (t *Table) GetSnapshot(playerID string) *Table {

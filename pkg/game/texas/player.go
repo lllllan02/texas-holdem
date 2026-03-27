@@ -15,8 +15,9 @@ type Player struct {
 	// ==================================
 	// 持久状态（跨局保留）
 	// ==================================
-	Chips  int          `json:"chips"`
-	Status PlayerStatus `json:"status"`
+	Chips    int          `json:"chips"`
+	Status   PlayerStatus `json:"status"`
+	IsReady  bool         `json:"isReady"` // 是否已准备好进入下一局
 
 	// ==================================
 	// 单局状态（每局 StartHand 或 NextStage 时需重置）
