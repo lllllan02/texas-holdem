@@ -12,10 +12,7 @@ import (
 var Upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	// 默认允许跨域
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+	CheckOrigin:     func(r *http.Request) bool { return true }, // 默认允许跨域
 }
 
 // ServeWS 处理 HTTP 请求，将其升级为 WebSocket 连接，并注册到 Hub。
@@ -34,7 +31,13 @@ func ServeWS(hub *Hub, handler MessageHandler, clientID string, context any, w h
 	c.context = context
 
 	// 3. 注册到 Hub
-	hub.register <- c
+	select {
+	case hub.register <- c:
+	case <-hub.destroy:
+		// 如果 Hub 已经停止，直接关闭连接
+		conn.Close()
+		return
+	}
 
 	// 4. 启动读写 Goroutine
 	go c.WritePump()

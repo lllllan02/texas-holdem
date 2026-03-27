@@ -1,6 +1,9 @@
 package wscore
 
-import "log"
+import (
+	"log"
+	"sync"
+)
 
 // Hub 是一个通用的 WebSocket 连接管理器。
 // 它维护了一组活跃的 Client，并处理注册、注销和广播消息。
@@ -20,6 +23,9 @@ type Hub struct {
 
 	// 销毁通道
 	destroy chan struct{}
+
+	// 确保 Stop 逻辑只执行一次
+	stopOnce sync.Once
 }
 
 // NewHub 创建一个新的 Hub 实例
@@ -87,7 +93,9 @@ func (h *Hub) BroadcastMessage(message []byte) {
 
 // Stop 停止 Hub 并断开所有连接。
 func (h *Hub) Stop() {
-	close(h.destroy)
+	h.stopOnce.Do(func() {
+		close(h.destroy)
+	})
 }
 
 // removeClient 从 Hub 中移除客户端并清理资源。
@@ -98,7 +106,7 @@ func (h *Hub) removeClient(c *Client) {
 	}
 
 	delete(h.clients, c)
-	close(c.send)
+	close(c.closeCh) // 通知 WritePump 退出
 	log.Printf("Hub: Client [%s] unregistered. Total: %d", c.id, len(h.clients))
 	if c.handler != nil {
 		go c.handler.OnDisconnect(c)

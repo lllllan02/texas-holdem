@@ -43,6 +43,9 @@ type Client struct {
 
 	// 确保 Close 逻辑只执行一次
 	closeOnce sync.Once
+
+	// 用于通知 WritePump 退出，替代直接关闭 send 通道，避免并发写入 panic
+	closeCh chan struct{}
 }
 
 // GetID 获取客户端 ID
@@ -69,10 +72,8 @@ func (c *Client) SendMessage(message []byte) {
 //
 // 完整的关闭流程如下：
 //  1. 调用 c.Close() 向 Hub 发送注销信号 (c.hub.unregister <- c)。
-//  2. Hub 收到信号后，从 clients 映射中移除该客户端，并关闭 c.send 通道。
-//     - 注意：必须由 Hub 来关闭 c.send，因为 Hub 是唯一向 c.send 发送数据的生产者，
-//     - Go 语言原则：永远只在发送端关闭通道，以避免 panic: send on closed channel
-//  3. WritePump 监听到 c.send 被关闭，向客户端发送 WebSocket Close 帧。
+//  2. Hub 收到信号后，从 clients 映射中移除该客户端，并关闭 c.closeCh 通道。
+//  3. WritePump 监听到 c.closeCh 被关闭，向客户端发送 WebSocket Close 帧。
 //  4. WritePump 退出循环，触发 defer 关闭底层的 TCP 连接 (c.conn.Close())。
 //  5. 底层连接关闭导致 ReadPump 中的 ReadMessage 阻塞返回错误。
 //  6. ReadPump 退出循环，触发 defer，整个客户端生命周期安全结束。
@@ -94,6 +95,7 @@ func NewClient(id string, conn *websocket.Conn, hub *Hub, handler MessageHandler
 		conn:    conn,
 		hub:     hub,
 		send:    make(chan []byte, 256),
+		closeCh: make(chan struct{}),
 		handler: handler,
 		context: *new(any), // 初始化零值，ServeWS 中会覆盖
 	}
@@ -103,6 +105,10 @@ func NewClient(id string, conn *websocket.Conn, hub *Hub, handler MessageHandler
 // 它必须运行在一个独立的 Goroutine 中。
 func (c *Client) ReadPump() {
 	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("Client [%s] ReadPump panic recovered: %v", c.id, err)
+		}
+
 		c.Close()
 		c.conn.Close()
 	}()
@@ -138,20 +144,19 @@ func (c *Client) ReadPump() {
 func (c *Client) WritePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
-		ticker.Stop()
+		if err := recover(); err != nil {
+			log.Printf("Client [%s] WritePump panic recovered: %v", c.id, err)
+		}
+
 		c.Close() // 确保即使是 Write 异常退出，也能通知 Hub 清理资源
 		c.conn.Close()
+		ticker.Stop()
 	}()
 
 	for {
 		select {
-		case message, ok := <-c.send:
+		case message := <-c.send:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if !ok {
-				// Send 通道被 Hub 关闭，说明需要断开连接
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
 
 			w, err := c.conn.NextWriter(websocket.TextMessage)
 			if err != nil {
@@ -162,6 +167,12 @@ func (c *Client) WritePump() {
 			if err := w.Close(); err != nil {
 				return
 			}
+
+		case <-c.closeCh:
+			// Hub 通知连接关闭
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+			return
 
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
