@@ -124,9 +124,6 @@
                     指定房间号: <input type="text" id="createRoomId" placeholder="留空自动生成" style="width: 100px; padding: 4px;">
                 </label>
                 <label style="display: flex; align-items: center; justify-content: space-between;">
-                    最大人数: <input type="number" id="maxPlayers" value="9" min="2" max="9" style="width: 70px; padding: 4px;">
-                </label>
-                <label style="display: flex; align-items: center; justify-content: space-between;">
                     初始筹码: <input type="number" id="initialChips" value="1000" min="100" style="width: 70px; padding: 4px;">
                 </label>
                 <label style="display: flex; align-items: center; justify-content: space-between;">
@@ -295,7 +292,6 @@
         const gameType = 'texas'; // 目前固定为德州扑克
         const customRoomId = document.getElementById('createRoomId').value.trim();
         const config = {
-            maxPlayers: parseInt(document.getElementById('maxPlayers').value) || 9,
             initialChips: parseInt(document.getElementById('initialChips').value) || 1000,
             smallBlind: parseInt(document.getElementById('smallBlind').value) || 10,
             bigBlind: parseInt(document.getElementById('bigBlind').value) || 20
@@ -450,8 +446,11 @@
             if (data.action === "game.sync_state") {
                 // 如果是纯游戏状态同步，只更新 gameState 部分
                 currentState.gameState = parsedContent;
-            } else {
+            } else if (data.action === "room.sync_state") {
                 // 如果是房间状态同步，全量更新
+                currentState = parsedContent;
+            } else {
+                // 兼容其他可能的 state 消息
                 currentState = parsedContent;
             }
         } catch(e) {
@@ -501,7 +500,7 @@
             // 渲染座位
             pokerTable.style.display = 'flex';
             pokerTable.innerHTML = '';
-            const maxPlayers = state.gameState.maxPlayers || 9;
+            const maxPlayers = 9; // 固定 9 人桌
             const seats = state.gameState.seats || [];
             
             let isSeated = false;
@@ -510,7 +509,8 @@
                 const seatDiv = document.createElement('div');
                 const seatInfo = seats[i];
                 
-                if (seatInfo) {
+                // 修复：判断 seatInfo 是否存在且不为 null
+                if (seatInfo && typeof seatInfo === 'object' && !Array.isArray(seatInfo)) {
                     // 座位有人
                     const isMe = seatInfo.id === userId;
                     if (isMe) isSeated = true;
@@ -518,7 +518,7 @@
                     seatDiv.className = `seat occupied ${isMe ? 'me' : ''}`;
                     
                     let roleStr = '';
-                    if (state.gameState.round) {
+                    if (state.gameState && state.gameState.round) {
                         if (i === state.gameState.round.smallBlindIdx) roleStr = '(SB)';
                         if (i === state.gameState.round.bigBlindIdx) roleStr = '(BB)';
                         if (i === state.gameState.buttonIdx) roleStr = '(庄)';
@@ -531,7 +531,7 @@
                     
                     if (seatInfo.holeCards && seatInfo.holeCards.length > 0) {
                         seatDiv.innerHTML += `<div>${seatInfo.holeCards.map(c => c.Suit + c.Rank).join('')}</div>`;
-                    } else if (state.gameState.round && state.gameState.round.stage !== 'WAITING' && !seatInfo.isFolded) {
+                    } else if (state.gameState && state.gameState.round && state.gameState.round.stage !== 'WAITING' && !seatInfo.isFolded) {
                         seatDiv.innerHTML += `<div>🂠🂠</div>`;
                     }
                 } else {
@@ -539,7 +539,7 @@
                     seatDiv.className = 'seat';
                     seatDiv.innerHTML = `<div>座位 ${i}</div><div>点击坐下</div>`;
                     seatDiv.onclick = () => {
-                        const isGameRunning = state.gameState.round && state.gameState.round.stage !== 'WAITING';
+                        const isGameRunning = state.gameState && state.gameState.round && state.gameState.round.stage !== 'WAITING';
                         if (isSeated && isGameRunning) {
                             alert("游戏进行中，无法换座！");
                             return;
@@ -580,12 +580,12 @@
                 
                 // 如果游戏状态里有座位信息，可以进一步标注座位
                 if (state.gameState && state.gameState.seats) {
-                    const seatIndex = state.gameState.seats.findIndex(s => s && s.id === player);
+                    const seatIndex = state.gameState.seats.findIndex(s => s && typeof s === 'object' && !Array.isArray(s) && s.id === player);
                     if (seatIndex !== -1) {
                         const seatInfo = state.gameState.seats[seatIndex];
                         text += ` [座位 ${seatIndex}] ($${seatInfo.chips})`;
                         
-                        if (state.gameState.round) {
+                        if (state.gameState && state.gameState.round) {
                             if (seatIndex === state.gameState.round.smallBlindIdx) text += ` (SB)`;
                             if (seatIndex === state.gameState.round.bigBlindIdx) text += ` (BB)`;
                             if (seatIndex === state.gameState.buttonIdx) text += ` (庄)`;
@@ -594,7 +594,7 @@
                         
                         if (seatInfo.holeCards) {
                             text += ` [底牌: ${seatInfo.holeCards.map(c => c.Suit + c.Rank).join(' ')}]`;
-                        } else if (state.gameState.round && state.gameState.round.stage !== 'WAITING' && seatInfo.status === 0 && !seatInfo.isFolded) {
+                        } else if (state.gameState && state.gameState.round && state.gameState.round.stage !== 'WAITING' && seatInfo.status === 0 && !seatInfo.isFolded) {
                             text += ` [底牌: 🂠 🂠]`;
                         }
                         

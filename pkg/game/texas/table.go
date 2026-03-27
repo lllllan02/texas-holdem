@@ -19,13 +19,14 @@ const (
 	StageShowdown GameStage = "SHOWDOWN" // 摊牌结算
 )
 
+// MaxTableSeats 德州扑克桌子的最大座位数
+const MaxTableSeats = 9
+
 type Table struct {
 	mu sync.RWMutex
 
-	MaxPlayers int `json:"maxPlayers"`
-
-	Seats   []*Player          `json:"seats"`
-	Players map[string]*Player `json:"-"` // 内部映射，不暴露给前端
+	Seats   [MaxTableSeats]*Player `json:"seats"` // 固定 9 人桌
+	Players map[string]*Player     `json:"-"`     // 内部映射，不暴露给前端
 
 	// 1. 基础配置
 	SmallBlind   int `json:"smallBlind"`   // 小盲注金额
@@ -39,37 +40,12 @@ type Table struct {
 	Round *Round `json:"round"` // 当前正在进行的牌局（如果没有开始则为 nil）
 }
 
-// Round 表示单局游戏的状态
-type Round struct {
-	Stage          GameStage `json:"stage"`          // 当前处于什么阶段
-	Deck           *Deck     `json:"-"`              // 牌堆，绝对不能暴露给前端
-	CommunityCards []Card    `json:"communityCards"` // 公共牌
-
-	// 盲注位置
-	SmallBlindIdx int `json:"smallBlindIdx"` // 小盲注(SB)在 seats 数组中的索引
-	BigBlindIdx   int `json:"bigBlindIdx"`   // 大盲注(BB)在 seats 数组中的索引
-
-	// 筹码与下注流转
-	Pots               []int `json:"pots"`               // 奖池
-	HighestBet         int   `json:"highestBet"`         // 当前这一轮的最高下注额
-	LastRaiseDiff      int   `json:"lastRaiseDiff"`      // 上一次的有效加注幅度
-	MinRaiseAmount     int   `json:"minRaiseAmount"`     // 当前合法的最小加注总额
-	ActivePlayersCount int   `json:"activePlayersCount"` // 当前未弃牌且未破产的活跃玩家数量
-
-	// 流程控制辅助字段
-	CurrentTurn   int `json:"currentTurn"`   // 当前轮到哪个玩家说话（seats 数组的索引）
-	LastActionIdx int `json:"lastActionIdx"` // 记录是谁最后一次发起了有效的“主动行为”
-}
-
 func NewTable(param map[string]any) *Table {
-	maxPlayers := cast.ToInt(param["maxPlayers"])
 	smallBlind := cast.ToInt(param["smallBlind"])
 	bigBlind := cast.ToInt(param["bigBlind"])
 	initialChips := cast.ToInt(param["initialChips"])
 
 	return &Table{
-		MaxPlayers:   maxPlayers,
-		Seats:        make([]*Player, maxPlayers),
 		Players:      make(map[string]*Player),
 		SmallBlind:   smallBlind,
 		BigBlind:     bigBlind,
@@ -84,7 +60,7 @@ func (t *Table) SitDown(playerID string, seatIdx int) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if seatIdx < 0 || seatIdx >= t.MaxPlayers {
+	if seatIdx < 0 || seatIdx >= MaxTableSeats {
 		return fmt.Errorf("invalid seat index")
 	}
 	if t.Seats[seatIdx] != nil {
@@ -150,7 +126,6 @@ func (t *Table) GetSnapshot(playerID string) *Table {
 
 	// 1. 浅拷贝 Table (不拷贝锁)
 	snap := Table{
-		MaxPlayers:   t.MaxPlayers,
 		SmallBlind:   t.SmallBlind,
 		BigBlind:     t.BigBlind,
 		InitialChips: t.InitialChips,
@@ -162,9 +137,11 @@ func (t *Table) GetSnapshot(playerID string) *Table {
 	snap.Players = nil
 
 	// 3. 深拷贝 Seats，以防修改影响原对象
-	snap.Seats = make([]*Player, len(t.Seats))
+	// 注意：因为 Seats 是定长数组，我们需要显式地给每个元素赋值
 	for i, p := range t.Seats {
 		if p == nil {
+			// 如果原座位为空，快照里的座位也必须显式置空
+			snap.Seats[i] = nil
 			continue
 		}
 

@@ -317,7 +317,8 @@ func (r *Room) broadcastState() {
 
 	players := r.getPlayers()
 	for _, playerID := range players {
-		state := r.engine.GetState(playerID)
+		// 统一使用 getFullState，保证前后端状态结构一致，包含 roomId, hostId 和 gameState
+		state := r.getFullState(playerID)
 		r.SendTo(playerID, ActionSyncState, state)
 	}
 }
