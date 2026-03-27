@@ -42,6 +42,10 @@ func BuildServerMessage(senderID string, action string, content any) []byte {
 		Action:   action,
 		Content:  content,
 	}
-	bytes, _ := json.Marshal(msg)
+	bytes, err := json.Marshal(msg)
+	if err != nil {
+		// 避免因为 content 中包含无法序列化的类型（如 channel/func）导致崩溃或静默失败
+		return []byte(`{"action":"error","content":"internal server error: failed to marshal message"}`)
+	}
 	return bytes
 }
