@@ -23,9 +23,10 @@ const (
 	ActionHostPause = "texas.host.pause" // 房主暂停游戏
 
 	// 玩家基础操作
-	ActionPlayerSit   = "texas.player.sit"   // 玩家坐下
-	ActionPlayerStand = "texas.player.stand" // 玩家站起
-	ActionPlayerReady = "texas.player.ready" // 玩家准备进入下一局
+	ActionPlayerSit         = "texas.player.sit"          // 玩家坐下
+	ActionPlayerStand       = "texas.player.stand"        // 玩家站起
+	ActionPlayerReady       = "texas.player.ready"        // 玩家准备进入下一局
+	ActionPlayerCancelReady = "texas.player.cancel_ready" // 玩家取消准备
 
 	// 玩家打牌操作
 	ActionGameBet   = "texas.game.bet"   // 下注/加注
@@ -131,6 +132,8 @@ func (e *Engine) HandleMessage(playerID string, action string, content string) {
 		changed = e.handlePlayerAction(playerID, action, content)
 	case ActionPlayerReady:
 		changed = e.handleReady(playerID)
+	case ActionPlayerCancelReady:
+		changed = e.handleCancelReady(playerID)
 
 	default:
 	}
@@ -282,6 +285,33 @@ func (e *Engine) handleReady(playerID string) bool {
 	return true
 }
 
+func (e *Engine) handleCancelReady(playerID string) bool {
+	// 找到玩家并设置取消准备状态
+	var player *Player
+	for _, p := range e.Table.Seats {
+		if p != nil && p.ID == playerID {
+			player = p
+			break
+		}
+	}
+
+	if player == nil {
+		return false // 旁观者不能取消准备
+	}
+
+	if !player.IsReady {
+		return false // 还没准备过
+	}
+
+	player.IsReady = false
+	log.Printf("[TexasEngine] 玩家 %s 取消准备\n", playerID)
+
+	// 检查是否因为玩家取消准备导致不满足开局条件，取消倒计时
+	e.checkAndStartCountdown()
+
+	return true
+}
+
 // checkAndStartCountdown 检查是否满足开局条件，如果满足则开始倒计时，否则取消倒计时
 func (e *Engine) checkAndStartCountdown() {
 	// 只有在未暂停，且没有进行中的牌局时，才需要检查
@@ -359,6 +389,9 @@ func (e *Engine) cancelTimer() {
 	if e.timerCancelCh != nil {
 		close(e.timerCancelCh)
 		e.timerCancelCh = nil
+		
+		// 广播取消倒计时的消息，让前端隐藏倒计时
+		e.room.Broadcast("", ActionSysCountdown, -1)
 	}
 }
 

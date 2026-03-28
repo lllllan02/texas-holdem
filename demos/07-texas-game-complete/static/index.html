@@ -169,6 +169,7 @@
             <button id="startBtn" class="btn-sit" style="display: none;">▶️ 恢复游戏</button>
             <button id="pauseBtn" class="btn-stand" style="display: none;">⏸️ 暂停游戏</button>
             <button id="readyBtn" class="btn-sit" style="display: none; background-color: #ff9800;">✅ 准备下一局</button>
+            <button id="cancelReadyBtn" class="btn-stand" style="display: none; background-color: #9e9e9e;">❌ 取消准备</button>
             <button id="standBtn" class="btn-stand" disabled>🏃 站起</button>
             <button id="checkBtn" class="btn-sit" style="background-color: #00bcd4;" disabled>✊ 过牌</button>
             <button id="callBtn" class="btn-sit" style="background-color: #3f51b5;" disabled>📞 跟注</button>
@@ -297,13 +298,22 @@
                     if (document.getElementById('tableCenterMsg')) document.getElementById('tableCenterMsg').style.display = 'none';
                     break;
                 case 'texas.player.ready': actionText = '已准备'; actionClass = 'action-join'; break;
+                case 'texas.player.cancel_ready': actionText = '取消了准备'; actionClass = 'action-leave'; break;
                 case 'texas.sys.round_end': actionText = '【系统】' + displayContent; actionClass = 'action-private'; break;
                 case 'texas.sys.countdown': 
-                    actionText = '【系统】游戏将在 ' + displayContent + ' 秒后开始...'; 
-                    actionClass = 'action-private'; 
-                    if (document.getElementById('tableCenterMsg')) {
-                        document.getElementById('tableCenterMsg').innerText = displayContent;
-                        document.getElementById('tableCenterMsg').style.display = 'block';
+                    if (displayContent === -1) {
+                        actionText = '【系统】倒计时已取消';
+                        actionClass = 'action-private';
+                        if (document.getElementById('tableCenterMsg')) {
+                            document.getElementById('tableCenterMsg').style.display = 'none';
+                        }
+                    } else {
+                        actionText = '【系统】游戏将在 ' + displayContent + ' 秒后开始...'; 
+                        actionClass = 'action-private'; 
+                        if (document.getElementById('tableCenterMsg')) {
+                            document.getElementById('tableCenterMsg').innerText = displayContent;
+                            document.getElementById('tableCenterMsg').style.display = 'block';
+                        }
                     }
                     break;
                 case 'texas.sys.hand_start': 
@@ -662,16 +672,25 @@
             if (foldBtn) foldBtn.disabled = !(isSeated && isGameRunning);
             
             // 准备按钮逻辑：游戏处于运行中，且玩家已落座且未准备
-            if (readyBtn) {
+            const cancelReadyBtn = document.getElementById('cancelReadyBtn');
+            if (readyBtn && cancelReadyBtn) {
                 let showReady = false;
+                let showCancelReady = false;
                 if (!isPaused && isSeated) {
                     // 找到自己的准备状态
                     const mySeat = seats.find(s => s && s.id === userId);
-                    if (mySeat && !mySeat.isReady) {
-                        showReady = true;
+                    if (mySeat) {
+                        if (!mySeat.isReady) {
+                            showReady = true;
+                        } else {
+                            // 只有在等待阶段或者自己不在当前牌局中时才能取消准备
+                            // 简单起见，只要已准备就显示取消准备按钮
+                            showCancelReady = true;
+                        }
                     }
                 }
                 readyBtn.style.display = showReady ? 'inline-block' : 'none';
+                cancelReadyBtn.style.display = showCancelReady ? 'inline-block' : 'none';
             }
 
         } else if (gameStateDiv) {
@@ -823,6 +842,7 @@
 
     document.getElementById('standBtn').onclick = () => sendAction('texas.player.stand');
     document.getElementById('readyBtn').onclick = () => sendAction('texas.player.ready');
+    document.getElementById('cancelReadyBtn').onclick = () => sendAction('texas.player.cancel_ready');
     document.getElementById('checkBtn').onclick = () => sendAction('texas.game.check');
     document.getElementById('callBtn').onclick = () => sendAction('texas.game.call');
     document.getElementById('betBtn').onclick = () => sendAction('texas.game.bet', '100');
