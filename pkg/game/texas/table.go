@@ -144,10 +144,11 @@ func (t *Table) StartNewHand() error {
 		// TODO: 初始化牌堆、发底牌、扣除盲注等真实逻辑
 	}
 
-	// 开启新局时，重置所有落座玩家的弃牌状态
+	// 开启新局时，重置所有落座玩家的弃牌和准备状态
 	for _, p := range t.Seats {
 		if p != nil {
 			p.IsFolded = false
+			p.IsReady = false // 游戏一旦开始，立刻清理准备状态
 		}
 	}
 
@@ -187,14 +188,6 @@ func (t *Table) nextStageInternal() {
 		// 暂时不将 t.Round 置为 nil，保留上一局的最终状态供前端展示
 		// t.Round = nil // 牌局结束
 		// TODO: 移动庄家按钮 (ButtonIdx)
-		
-		// 牌局结束，重置所有玩家的准备状态
-		// 注意：这里不重置 IsFolded，保留弃牌状态供前端结算展示
-		for _, p := range t.Seats {
-			if p != nil {
-				p.IsReady = false
-			}
-		}
 	case StageWaiting:
 		// 如果已经是 Waiting 状态，说明可能是提前强制结束（比如所有人都弃牌了），不需要再推进
 		return

@@ -15,10 +15,10 @@ import (
 // 3. 业务层在处理这些 handler 时，天然是线程安全的，不需要加任何锁（sync.Mutex/RWMutex）。
 //
 // 【下游业务层（Room/Engine）开发须知】
-// - 只要是由客户端网络消息触发的逻辑，直接写即可，无需考虑并发。
-// - 如果业务层有独立的后台 Goroutine（例如：time.AfterFunc 定时器、监听其他 channel 的循环），
-//   并且这些 Goroutine 需要读取或修改房间/游戏状态，**绝对不能直接操作**，必须通过 `Hub.Execute()`
-//   将操作打包成闭包函数投递回 Hub，让 Hub 在主循环中串行执行，以防数据竞争。
+//   - 只要是由客户端网络消息触发的逻辑，直接写即可，无需考虑并发。
+//   - 如果业务层有独立的后台 Goroutine（例如：time.AfterFunc 定时器、监听其他 channel 的循环），
+//     并且这些 Goroutine 需要读取或修改房间/游戏状态，**绝对不能直接操作**，必须通过 `Hub.Execute()`
+//     将操作打包成闭包函数投递回 Hub，让 Hub 在主循环中串行执行，以防数据竞争。
 type Hub struct {
 	// 活跃的客户端列表
 	clients map[*Client]bool
@@ -54,13 +54,13 @@ type clientMessage struct {
 // NewHub 创建一个新的 Hub 实例
 func NewHub() *Hub {
 	return &Hub{
-		broadcast:  make(chan []byte),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
+		broadcast:  make(chan []byte, 64),
+		register:   make(chan *Client, 8),
+		unregister: make(chan *Client, 8),
 		clients:    make(map[*Client]bool),
 		destroy:    make(chan struct{}),
-		incoming:   make(chan *clientMessage, 1024),
-		tasks:      make(chan func(), 1024),
+		incoming:   make(chan *clientMessage, 64),
+		tasks:      make(chan func(), 64),
 	}
 }
 
@@ -172,7 +172,7 @@ func (h *Hub) removeClient(c *Client) {
 	delete(h.clients, c)
 	close(c.closeCh) // 通知 WritePump 退出
 	log.Printf("Hub: Client [%s] unregistered. Total: %d", c.id, len(h.clients))
-	
+
 	// 通知业务层：连接断开（同步调用，保证与消息处理串行）
 	if c.handler != nil {
 		c.handler.OnDisconnect(c)
