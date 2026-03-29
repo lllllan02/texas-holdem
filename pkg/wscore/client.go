@@ -132,9 +132,15 @@ func (c *Client) ReadPump() {
 		// 刷新超时时间
 		c.conn.SetReadDeadline(time.Now().Add(pongWait))
 
-		// 将消息抛给业务层处理
-		if c.handler != nil {
-			c.handler.OnMessage(c, message)
+		// 将消息发送给 Hub 处理。
+		// 为什么不在这里直接调用 c.handler.OnMessage？
+		// 因为 ReadPump 是每个连接一个独立的 Goroutine，如果直接调用，
+		// 多个客户端同时发消息就会导致业务层的 OnMessage 并发执行，引发数据竞争。
+		// 发给 Hub 的 incoming 通道，由 Hub.Run 进行统一串行分发，从而解放业务层。
+		select {
+		case c.hub.incoming <- &clientMessage{client: c, message: message}:
+		case <-c.hub.destroy:
+			return // Hub 已停止，退出
 		}
 	}
 }
