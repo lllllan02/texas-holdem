@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/lllllan02/texas-holdem/pkg/room"
@@ -37,7 +36,6 @@ const (
 
 // Engine 德州扑克游戏引擎，实现了 room.GameEngine 接口
 type Engine struct {
-	mu       sync.Mutex
 	room     *room.Room
 	Table    *Table
 	updateCh chan struct{}
@@ -98,12 +96,15 @@ func (e *Engine) OnPlayerLeave(playerID string) {
 
 // HandleMessage 处理游戏特定消息
 func (e *Engine) HandleMessage(playerID string, action string, content string) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
 	// 路由拦截器：如果游戏处于暂停状态，拦截所有 game 级别的操作
 	if e.isPaused && strings.HasPrefix(action, "texas.game.") {
 		e.room.SendTo(playerID, "error", `{"message": "游戏已暂停，无法进行该操作"}`)
+		return
+	}
+
+	// 动作白名单拦截器：检查玩家是否有权限执行该动作
+	if !e.checkActionAllowed(playerID, action) {
+		e.room.SendTo(playerID, "error", fmt.Sprintf(`{"message": "当前状态不允许执行该操作: %s"}`, action))
 		return
 	}
 
@@ -213,25 +214,11 @@ func (e *Engine) handleStand(playerID string) bool {
 
 func (e *Engine) handlePlayerAction(playerID string, action string, content string) bool {
 	// 1. 找到玩家
-	var player *Player
-	var playerSeatIdx int
-	for i, p := range e.Table.Seats {
-		if p != nil && p.ID == playerID {
-			player = p
-			playerSeatIdx = i
-			break
-		}
-	}
-
-	if player == nil {
+	seatIdx := e.Table.FindPlayerSeat(playerID)
+	if seatIdx == -1 {
 		return false
 	}
-
-	// 检查是否轮到该玩家说话
-	if e.Table.Round == nil || e.Table.Round.CurrentTurn != playerSeatIdx {
-		e.room.SendTo(playerID, "error", `{"message": "还没轮到你说话"}`)
-		return false
-	}
+	player := e.Table.Seats[seatIdx]
 
 	// 2. 根据 action 更新玩家状态
 	if action == ActionGameFold {
@@ -244,10 +231,17 @@ func (e *Engine) handlePlayerAction(playerID string, action string, content stri
 	if e.Table.Round != nil {
 		e.Table.AdvanceTurn()
 
-		// 骨架逻辑：如果推进后变成了 WAITING（一局结束），并且当前引擎未暂停，则等待玩家准备
-		if e.Table.Round != nil && e.Table.Round.Stage == StageWaiting && !e.isPaused {
+		// 骨架逻辑：如果推进后变成了 SHOWDOWN 或 WAITING（一局结束），并且当前引擎未暂停，则等待玩家准备
+		if !e.Table.IsGameRunning() && !e.isPaused {
 			log.Printf("[TexasEngine] 牌局结束，等待玩家确认结果\n")
-			e.room.Broadcast("", ActionSysRoundEnd, "牌局结束，请确认结果并准备下一局")
+
+			// 构造一个简单的结算结果
+			result := map[string]any{
+				"message": "牌局结束，请确认结果并准备下一局",
+				// TODO: 这里可以加入赢家是谁、赢了多少筹码等真实结算数据
+			}
+			resultBytes, _ := json.Marshal(result)
+			e.room.Broadcast("", ActionSysRoundEnd, string(resultBytes))
 		}
 	}
 
@@ -256,17 +250,11 @@ func (e *Engine) handlePlayerAction(playerID string, action string, content stri
 
 func (e *Engine) handleReady(playerID string) bool {
 	// 找到玩家并设置准备状态
-	var player *Player
-	for _, p := range e.Table.Seats {
-		if p != nil && p.ID == playerID {
-			player = p
-			break
-		}
-	}
-
-	if player == nil {
+	seatIdx := e.Table.FindPlayerSeat(playerID)
+	if seatIdx == -1 {
 		return false // 旁观者不能准备
 	}
+	player := e.Table.Seats[seatIdx]
 
 	if player.IsReady {
 		return false // 已经准备过了
@@ -287,17 +275,11 @@ func (e *Engine) handleReady(playerID string) bool {
 
 func (e *Engine) handleCancelReady(playerID string) bool {
 	// 找到玩家并设置取消准备状态
-	var player *Player
-	for _, p := range e.Table.Seats {
-		if p != nil && p.ID == playerID {
-			player = p
-			break
-		}
-	}
-
-	if player == nil {
+	seatIdx := e.Table.FindPlayerSeat(playerID)
+	if seatIdx == -1 {
 		return false // 旁观者不能取消准备
 	}
+	player := e.Table.Seats[seatIdx]
 
 	if !player.IsReady {
 		return false // 还没准备过
@@ -315,7 +297,7 @@ func (e *Engine) handleCancelReady(playerID string) bool {
 // checkAndStartCountdown 检查是否满足开局条件，如果满足则开始倒计时，否则取消倒计时
 func (e *Engine) checkAndStartCountdown() {
 	// 只有在未暂停，且没有进行中的牌局时，才需要检查
-	if e.isPaused || (e.Table.Round != nil && e.Table.Round.Stage != StageWaiting) {
+	if e.isPaused || e.Table.IsGameRunning() {
 		return
 	}
 
@@ -362,25 +344,24 @@ func (e *Engine) scheduleNextHand(delay time.Duration) {
 			}
 		}
 
-		// 倒计时结束，获取锁执行开始逻辑
-		e.mu.Lock()
-		defer e.mu.Unlock()
+		// 倒计时结束，提交到房间的事件循环中执行开始逻辑
+		e.room.GetHub().Execute(func() {
+			// 再次检查是否被暂停
+			if e.isPaused {
+				return
+			}
 
-		// 再次检查是否被暂停
-		if e.isPaused {
-			return
-		}
+			if err := e.Table.StartNewHand(); err != nil {
+				log.Printf("[TexasEngine] 自动开启下一局失败: %v\n", err)
+				e.isPaused = true // 开启失败则暂停游戏
+				e.room.Broadcast("", ActionHostPause, "人数不足，自动暂停")
+			} else {
+				e.room.Broadcast("", ActionSysHandStart, "新的一局开始了！")
+			}
 
-		if err := e.Table.StartNewHand(); err != nil {
-			log.Printf("[TexasEngine] 自动开启下一局失败: %v\n", err)
-			e.isPaused = true // 开启失败则暂停游戏
-			e.room.Broadcast("", ActionHostPause, "人数不足，自动暂停")
-		} else {
-			e.room.Broadcast("", ActionSysHandStart, "新的一局开始了！")
-		}
-
-		// 触发状态同步，把发牌等新状态推给前端
-		e.triggerSync()
+			// 触发状态同步，把发牌等新状态推给前端
+			e.triggerSync()
+		})
 	}()
 }
 
@@ -389,7 +370,7 @@ func (e *Engine) cancelTimer() {
 	if e.timerCancelCh != nil {
 		close(e.timerCancelCh)
 		e.timerCancelCh = nil
-		
+
 		// 广播取消倒计时的消息，让前端隐藏倒计时
 		e.room.Broadcast("", ActionSysCountdown, -1)
 	}
@@ -401,6 +382,12 @@ func (e *Engine) GetState(playerID string) any {
 		return nil
 	}
 
+	// 找到玩家的座位号
+	seatIdx := e.Table.FindPlayerSeat(playerID)
+
+	// 获取允许的动作
+	allowedActions := e.Table.CalculateAllowedActions(playerID, seatIdx, e.isPaused)
+
 	// 获取 Table 的安全快照
 	snap := e.Table.GetSnapshot(playerID)
 
@@ -408,5 +395,30 @@ func (e *Engine) GetState(playerID string) any {
 	return map[string]any{
 		"isPaused": e.isPaused,
 		"table":    snap,
+		"myInfo": map[string]any{
+			"seatIdx":        seatIdx,
+			"allowedActions": allowedActions,
+		},
 	}
+}
+
+// checkActionAllowed 检查玩家是否有权限执行该动作
+func (e *Engine) checkActionAllowed(playerID string, action string) bool {
+	// 房主操作不走这个白名单，由 handleToggleRunning 内部判断
+	if strings.HasPrefix(action, "texas.host.") {
+		return true
+	}
+
+	// 找到玩家的座位号
+	seatIdx := e.Table.FindPlayerSeat(playerID)
+
+	// 获取允许的动作
+	allowedActions := e.Table.CalculateAllowedActions(playerID, seatIdx, e.isPaused)
+	for _, allowedAction := range allowedActions {
+		if action == allowedAction {
+			return true
+		}
+	}
+
+	return false
 }

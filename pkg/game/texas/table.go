@@ -2,7 +2,6 @@ package texas
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/spf13/cast"
 )
@@ -23,8 +22,6 @@ const (
 const MaxTableSeats = 9
 
 type Table struct {
-	mu sync.RWMutex
-
 	Seats   [MaxTableSeats]*Player `json:"seats"` // 固定 9 人桌
 	Players map[string]*Player     `json:"-"`     // 内部映射，不暴露给前端
 
@@ -55,11 +52,26 @@ func NewTable(param map[string]any) *Table {
 	}
 }
 
+// IsGameRunning 判断当前是否处于游戏进行中（非等待且非结算阶段）
+func (t *Table) IsGameRunning() bool {
+	if t.Round == nil {
+		return false
+	}
+	return t.Round.Stage != StageWaiting && t.Round.Stage != StageShowdown
+}
+
+// FindPlayerSeat 查找玩家的座位号，如果未找到则返回 -1
+func (t *Table) FindPlayerSeat(playerID string) int {
+	for i, p := range t.Seats {
+		if p != nil && p.ID == playerID {
+			return i
+		}
+	}
+	return -1
+}
+
 // SitDown 玩家落座（支持未开始游戏时换座）
 func (t *Table) SitDown(playerID string, seatIdx int) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	if seatIdx < 0 || seatIdx >= MaxTableSeats {
 		return fmt.Errorf("invalid seat index")
 	}
@@ -67,19 +79,16 @@ func (t *Table) SitDown(playerID string, seatIdx int) error {
 		return fmt.Errorf("seat is already taken")
 	}
 
+	// 如果游戏已经开始，不允许新玩家坐下
+	if t.IsGameRunning() {
+		return fmt.Errorf("cannot sit down during an active game")
+	}
+
 	// 检查玩家是否已经坐下
 	if p, exists := t.Players[playerID]; exists {
-		// 如果游戏已经开始，不允许换座
-		if t.Round != nil && t.Round.Stage != StageWaiting {
-			return fmt.Errorf("cannot switch seats during an active game")
-		}
-
 		// 允许换座：先清空原来的座位
-		for i, seat := range t.Seats {
-			if seat != nil && seat.ID == playerID {
-				t.Seats[i] = nil
-				break
-			}
+		if oldSeatIdx := t.FindPlayerSeat(playerID); oldSeatIdx != -1 {
+			t.Seats[oldSeatIdx] = nil
 		}
 		// 坐到新座位
 		t.Seats[seatIdx] = p
@@ -96,20 +105,14 @@ func (t *Table) SitDown(playerID string, seatIdx int) error {
 
 // StandUp 玩家站起
 func (t *Table) StandUp(playerID string) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	_, exists := t.Players[playerID]
 	if !exists {
 		return fmt.Errorf("player is not seated")
 	}
 
 	// 找到玩家所在的座位并清空
-	for i, seat := range t.Seats {
-		if seat != nil && seat.ID == playerID {
-			t.Seats[i] = nil
-			break
-		}
+	if seatIdx := t.FindPlayerSeat(playerID); seatIdx != -1 {
+		t.Seats[seatIdx] = nil
 	}
 
 	delete(t.Players, playerID)
@@ -120,9 +123,6 @@ func (t *Table) StandUp(playerID string) error {
 
 // StartNewHand 开启新的一局游戏
 func (t *Table) StartNewHand() error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	// 1. 检查人数和准备状态
 	activeCount := 0
 	for _, p := range t.Seats {
@@ -142,6 +142,13 @@ func (t *Table) StartNewHand() error {
 		Stage:              StagePreFlop,
 		ActivePlayersCount: activeCount,
 		// TODO: 初始化牌堆、发底牌、扣除盲注等真实逻辑
+	}
+
+	// 开启新局时，重置所有落座玩家的弃牌状态
+	for _, p := range t.Seats {
+		if p != nil {
+			p.IsFolded = false
+		}
 	}
 
 	// 临时：随便找个座位作为当前行动者，让前端能显示箭头
@@ -181,29 +188,49 @@ func (t *Table) nextStageInternal() {
 		// t.Round = nil // 牌局结束
 		// TODO: 移动庄家按钮 (ButtonIdx)
 		
-		// 重置所有玩家的准备状态和弃牌状态
+		// 牌局结束，重置所有玩家的准备状态
+		// 注意：这里不重置 IsFolded，保留弃牌状态供前端结算展示
 		for _, p := range t.Seats {
 			if p != nil {
 				p.IsReady = false
-				p.IsFolded = false
 			}
 		}
+	case StageWaiting:
+		// 如果已经是 Waiting 状态，说明可能是提前强制结束（比如所有人都弃牌了），不需要再推进
+		return
 	}
 }
 
 // NextStage 推进游戏阶段
 func (t *Table) NextStage() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
 	t.nextStageInternal()
 }
 
 // AdvanceTurn 推进当前说话玩家，如果一圈结束，则调用 NextStage
 func (t *Table) AdvanceTurn() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	if t.Round == nil {
+		return
+	}
+
+	// 检查当前未弃牌的玩家数量
+	activeCount := 0
+	lastActiveIdx := -1
+	for i, p := range t.Seats {
+		if p != nil && !p.IsFolded && p.Status == PlayerStatusNormal {
+			activeCount++
+			lastActiveIdx = i
+		}
+	}
+
+	// 如果只剩一名玩家未弃牌，直接跳到结算阶段
+	if activeCount <= 1 {
+		// 如果还有人没说话，把说话权交给最后这个人（虽然没意义了）
+		if lastActiveIdx != -1 {
+			t.Round.CurrentTurn = lastActiveIdx
+		}
+		// 直接进入 Showdown 结算
+		t.Round.Stage = StageShowdown
+		t.nextStageInternal() // 这会把 Showdown 推进到 Waiting，并重置准备状态
 		return
 	}
 
@@ -213,7 +240,7 @@ func (t *Table) AdvanceTurn() {
 
 	for nextIdx != startIdx {
 		p := t.Seats[nextIdx]
-		if p != nil && !p.IsFolded {
+		if p != nil && !p.IsFolded && p.Status == PlayerStatusNormal {
 			t.Round.CurrentTurn = nextIdx
 			
 			// 骨架逻辑：如果转到了 LastActionIdx（一圈结束），就进入下一阶段
@@ -221,7 +248,7 @@ func (t *Table) AdvanceTurn() {
 			if nextIdx == t.Round.LastActionIdx {
 				t.nextStageInternal()
 				// 进入新阶段后，需要重置 LastActionIdx
-				if t.Round != nil {
+				if t.Round != nil && t.Round.Stage != StageWaiting {
 					t.Round.LastActionIdx = t.Round.CurrentTurn
 				}
 			}
@@ -230,16 +257,14 @@ func (t *Table) AdvanceTurn() {
 		nextIdx = (nextIdx + 1) % MaxTableSeats
 	}
 
-	// 如果只剩一个人没弃牌，直接结束
+	// 如果只剩一个人没弃牌，直接结束（上面的 activeCount 检查其实已经覆盖了这里，保留作为兜底）
+	t.Round.Stage = StageShowdown
 	t.nextStageInternal()
 }
 
 // GetSnapshot 为指定的玩家生成一份安全的数据快照
 // playerID: 请求这份数据的玩家 ID。如果是旁观者，可以传空字符串 ""
 func (t *Table) GetSnapshot(playerID string) *Table {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
 	// 1. 浅拷贝 Table (不拷贝锁)
 	snap := Table{
 		SmallBlind:   t.SmallBlind,
@@ -282,4 +307,66 @@ func (t *Table) GetSnapshot(playerID string) *Table {
 	}
 
 	return &snap
+}
+
+// CalculateAllowedActions 计算玩家当前允许的动作列表
+func (t *Table) CalculateAllowedActions(playerID string, seatIdx int, isPaused bool) []string {
+	actions := make([]string, 0)
+	isGameRunning := t.IsGameRunning()
+
+	// 如果未落座
+	if seatIdx == -1 {
+		// 检查是否有空座，且游戏未开始，如果有则允许坐下
+		if !isGameRunning {
+			hasEmptySeat := false
+			for _, s := range t.Seats {
+				if s == nil {
+					hasEmptySeat = true
+					break
+				}
+			}
+			if hasEmptySeat {
+				actions = append(actions, "texas.player.sit")
+			}
+		}
+		return actions
+	}
+
+	player := t.Seats[seatIdx]
+
+	if !isGameRunning && !player.IsReady {
+		// 只有在游戏未开始，且玩家未准备的情况下，才允许站起
+		actions = append(actions, "texas.player.stand")
+	}
+
+	if !isGameRunning {
+		// 游戏未开始，可以准备或取消准备
+		if !player.IsReady {
+			actions = append(actions, "texas.player.ready")
+		} else {
+			actions = append(actions, "texas.player.cancel_ready")
+		}
+	} else {
+		// 游戏进行中
+		if player.IsFolded {
+			// 已弃牌，只能看，不能做任何游戏动作
+			return actions
+		}
+
+		// 如果游戏被房主暂停，不允许进行任何打牌操作
+		if isPaused {
+			return actions
+		}
+
+		// 检查是否轮到自己说话
+		if t.Round.CurrentTurn == seatIdx {
+			// 轮到自己，可以进行游戏操作
+			actions = append(actions, "texas.game.fold")
+			actions = append(actions, "texas.game.check") // 简化版：暂不判断是否真的能 check
+			actions = append(actions, "texas.game.call")
+			actions = append(actions, "texas.game.bet")
+		}
+	}
+
+	return actions
 }

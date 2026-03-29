@@ -44,9 +44,9 @@
 
         .controls { display: flex; gap: 10px; margin-top: auto; }
         input[type="text"] { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
-        button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white; transition: opacity 0.2s; }
-        button:hover { opacity: 0.9; }
-        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white; transition: all 0.2s; }
+        button:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        button:disabled { background-color: #e0e0e0 !important; color: #9e9e9e !important; cursor: not-allowed; opacity: 0.7; box-shadow: none; }
         
         .btn-send { background-color: #2196f3; }
         .btn-sit { background-color: #4caf50; }
@@ -110,6 +110,12 @@
         .seat-chips {
             color: #f57c00;
             font-weight: bold;
+        }
+        
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0; }
+            100% { opacity: 1; }
         }
     </style>
 </head>
@@ -291,15 +297,38 @@
                 case 'texas.game.call': actionText = '跟注了'; actionClass = 'action-sit'; break;
                 case 'texas.game.bet': actionText = '下注了 ' + displayContent; actionClass = 'action-bet'; break;
                 case 'texas.game.fold': actionText = '弃牌了'; actionClass = 'action-fold'; break;
-                case 'texas.host.start': actionText = '恢复了游戏'; actionClass = 'action-sit'; break;
+                case 'texas.host.start': 
+                    actionText = '恢复了游戏'; 
+                    actionClass = 'action-sit'; 
+                    if (document.getElementById('tableCenterMsg')) {
+                        document.getElementById('tableCenterMsg').style.display = 'none';
+                    }
+                    break;
                 case 'texas.host.pause': 
                     actionText = '暂停了游戏' + (displayContent ? ' (' + displayContent + ')' : ''); 
                     actionClass = 'action-stand'; 
-                    if (document.getElementById('tableCenterMsg')) document.getElementById('tableCenterMsg').style.display = 'none';
+                    if (document.getElementById('tableCenterMsg')) {
+                        document.getElementById('tableCenterMsg').innerHTML = `<div style="font-size: 50px; color: #f44336; text-shadow: 2px 2px 4px #000;">游戏已暂停</div>`;
+                        document.getElementById('tableCenterMsg').style.display = 'block';
+                    }
                     break;
                 case 'texas.player.ready': actionText = '已准备'; actionClass = 'action-join'; break;
                 case 'texas.player.cancel_ready': actionText = '取消了准备'; actionClass = 'action-leave'; break;
-                case 'texas.sys.round_end': actionText = '【系统】' + displayContent; actionClass = 'action-private'; break;
+                case 'texas.sys.round_end': 
+                    let endMsg = displayContent;
+                    try {
+                        let parsed = JSON.parse(displayContent);
+                        if (parsed.message) endMsg = parsed.message;
+                    } catch(e) {}
+                    actionText = '【系统】' + endMsg; 
+                    actionClass = 'action-private'; 
+                    
+                    // 在屏幕中央展示结算结果
+                    if (document.getElementById('tableCenterMsg')) {
+                        document.getElementById('tableCenterMsg').innerHTML = `<div style="font-size: 40px; color: #ffeb3b; text-shadow: 2px 2px 4px #000;">牌局结束</div><div style="font-size: 20px; margin-top: 10px;">等待玩家准备...</div>`;
+                        document.getElementById('tableCenterMsg').style.display = 'block';
+                    }
+                    break;
                 case 'texas.sys.countdown': 
                     if (displayContent === -1) {
                         actionText = '【系统】倒计时已取消';
@@ -553,9 +582,9 @@
             const isPaused = state.gameState.isPaused;
             
             let gsHtml = `
-                <div style="margin-top: 10px; padding: 10px; background: #e8f5e9; border-radius: 4px;">
+                <div style="margin-top: 10px; padding: 10px; background: #e8f5e9; border-radius: 4px; position: relative;">
                     <strong>游戏配置:</strong> 盲注 ${table.smallBlind}/${table.bigBlind} | 初始筹码 ${table.initialChips} <br>
-                    <strong>运行状态:</strong> ${!isPaused ? '<span style="color:green">运行中</span>' : '<span style="color:red">已暂停</span>'} <br>
+                    <strong>运行状态:</strong> ${!isPaused ? '<span style="color:green">运行中</span>' : '<span style="color:red; font-weight:bold; font-size: 1.2em; animation: blink 1s infinite;">已暂停</span>'} <br>
             `;
             
             if (table.round) {
@@ -638,60 +667,75 @@
                 } else {
                     // 空座位
                     seatDiv.className = 'seat';
+                    seatDiv.setAttribute('data-seat-idx', i); // 记录真实座位号
                     seatDiv.innerHTML = `<div>座位 ${i}</div><div>点击坐下</div>`;
-                    seatDiv.onclick = () => {
-                        const isGameRunning = table.round && table.round.stage !== 'WAITING';
-                        if (isSeated && isGameRunning) {
-                            alert("游戏进行中，无法换座！");
-                            return;
-                        }
-                        // 发送坐下/换座请求
-                        sendAction('texas.player.sit', JSON.stringify({ seat: i }));
-                    };
+                    // 点击事件在后面统一绑定
                 }
                 pokerTable.appendChild(seatDiv);
             }
             
-            // 更新站起按钮状态
-            const standBtn = document.getElementById('standBtn');
-            if (standBtn) {
-                standBtn.disabled = !isSeated;
-            }
-
-            // 更新下注和弃牌按钮状态（仅落座且游戏进行中可点击，用于测试阶段流转）
+            // 更新下注和弃牌按钮状态（根据后端下发的 AllowedActions）
             const checkBtn = document.getElementById('checkBtn');
             const callBtn = document.getElementById('callBtn');
             const betBtn = document.getElementById('betBtn');
             const foldBtn = document.getElementById('foldBtn');
             const readyBtn = document.getElementById('readyBtn');
-            
-            const isGameRunning = table.round && table.round.stage !== 'WAITING';
-            if (checkBtn) checkBtn.disabled = !(isSeated && isGameRunning);
-            if (callBtn) callBtn.disabled = !(isSeated && isGameRunning);
-            if (betBtn) betBtn.disabled = !(isSeated && isGameRunning);
-            if (foldBtn) foldBtn.disabled = !(isSeated && isGameRunning);
-            
-            // 准备按钮逻辑：游戏处于运行中，且玩家已落座且未准备
             const cancelReadyBtn = document.getElementById('cancelReadyBtn');
-            if (readyBtn && cancelReadyBtn) {
-                let showReady = false;
-                let showCancelReady = false;
-                if (!isPaused && isSeated) {
-                    // 找到自己的准备状态
-                    const mySeat = seats.find(s => s && s.id === userId);
-                    if (mySeat) {
-                        if (!mySeat.isReady) {
-                            showReady = true;
-                        } else {
-                            // 只有在等待阶段或者自己不在当前牌局中时才能取消准备
-                            // 简单起见，只要已准备就显示取消准备按钮
-                            showCancelReady = true;
-                        }
-                    }
+            const standBtn = document.getElementById('standBtn');
+
+            // 默认全部禁用/隐藏
+            if (checkBtn) checkBtn.disabled = true;
+            if (callBtn) callBtn.disabled = true;
+            if (betBtn) betBtn.disabled = true;
+            if (foldBtn) foldBtn.disabled = true;
+            if (standBtn) standBtn.disabled = true;
+            if (readyBtn) readyBtn.style.display = 'none';
+            if (cancelReadyBtn) cancelReadyBtn.style.display = 'none';
+
+            // 根据 allowedActions 开启
+            const allowedActions = state.gameState.myInfo?.allowedActions || [];
+            allowedActions.forEach(action => {
+                switch(action) {
+                    case 'texas.player.stand':
+                        if (standBtn) standBtn.disabled = false;
+                        break;
+                    case 'texas.player.ready':
+                        if (readyBtn) readyBtn.style.display = 'inline-block';
+                        break;
+                    case 'texas.player.cancel_ready':
+                        if (cancelReadyBtn) cancelReadyBtn.style.display = 'inline-block';
+                        break;
+                    case 'texas.game.check':
+                        if (checkBtn) checkBtn.disabled = false;
+                        break;
+                    case 'texas.game.call':
+                        if (callBtn) callBtn.disabled = false;
+                        break;
+                    case 'texas.game.bet':
+                        if (betBtn) betBtn.disabled = false;
+                        break;
+                    case 'texas.game.fold':
+                        if (foldBtn) foldBtn.disabled = false;
+                        break;
                 }
-                readyBtn.style.display = showReady ? 'inline-block' : 'none';
-                cancelReadyBtn.style.display = showCancelReady ? 'inline-block' : 'none';
-            }
+            });
+
+            // 针对空座位的点击事件，前端也需要根据 allowedActions 判断是否能坐下
+            const canSit = allowedActions.includes('texas.player.sit');
+            const emptySeats = pokerTable.querySelectorAll('.seat:not(.occupied)');
+            emptySeats.forEach((seatDiv, idx) => {
+                // 重新绑定点击事件
+                seatDiv.onclick = () => {
+                    if (!canSit) {
+                        alert("当前状态不允许坐下或换座！");
+                        return;
+                    }
+                    // 注意：这里的 idx 是 DOM 元素索引，不一定是真实的座位号
+                    // 为了简化，我们假设 DOM 顺序和座位号一致
+                    const seatNum = parseInt(seatDiv.getAttribute('data-seat-idx'));
+                    sendAction('texas.player.sit', JSON.stringify({ seat: seatNum }));
+                };
+            });
 
         } else if (gameStateDiv) {
             gameStateDiv.innerHTML = '';
