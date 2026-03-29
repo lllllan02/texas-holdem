@@ -27,9 +27,6 @@ type Room struct {
 	// 房间管理器引用，用于在房间空闲时通知管理器销毁自己
 	manager *RoomManager
 
-	// 保护 users 和 joinOrder 等状态的互斥锁
-	mu sync.RWMutex
-
 	// 当前在房间内的在线玩家集合，Key 为玩家 ID
 	users map[string]*wscore.Client
 
@@ -91,10 +88,7 @@ func (r *Room) Broadcast(senderID string, action string, content any) {
 
 // SendTo 向指定的客户端发送单播消息
 func (r *Room) SendTo(playerID string, action string, content any) {
-	r.mu.RLock()
 	client, ok := r.users[playerID]
-	r.mu.RUnlock()
-
 	if ok {
 		outBytes := BuildServerMessage("", action, content)
 		client.SendMessage(outBytes)
@@ -103,10 +97,7 @@ func (r *Room) SendTo(playerID string, action string, content any) {
 
 // KickPlayer 踢出指定玩家（断开其连接）
 func (r *Room) KickPlayer(playerID string, reason string) {
-	r.mu.RLock()
 	client, ok := r.users[playerID]
-	r.mu.RUnlock()
-
 	if ok {
 		if reason != "" {
 			outBytes := BuildServerMessage("", ActionKick, reason)
@@ -132,8 +123,12 @@ func NewRoom(id string, hostID string, engine GameEngine, param map[string]any, 
 	}
 
 	// 初始状态下房间为空，启动回收定时器（5 分钟内无人加入则销毁）
-	rm.roomRecycleTimer = time.AfterFunc(5*time.Minute, rm.handleRoomRecycleTimeout)
-	rm.hostTransferTimer = time.AfterFunc(time.Hour*24, rm.handleHostTransferTimeout)
+	rm.roomRecycleTimer = time.AfterFunc(5*time.Minute, func() {
+		rm.hub.Execute(rm.handleRoomRecycleTimeout)
+	})
+	rm.hostTransferTimer = time.AfterFunc(time.Hour*24, func() {
+		rm.hub.Execute(rm.handleHostTransferTimeout)
+	})
 	rm.hostTransferTimer.Stop()
 
 	if rm.engine != nil {
@@ -152,8 +147,6 @@ func (r *Room) OnConnect(client *wscore.Client) {
 			log.Printf("Room [%s] OnConnect panic recovered: %v", r.id, err)
 		}
 	}()
-
-	r.mu.Lock()
 
 	// 顶号逻辑
 	if oldClient, ok := r.users[client.GetID()]; ok {
@@ -182,8 +175,6 @@ func (r *Room) OnConnect(client *wscore.Client) {
 		r.hostTransferTimer.Stop()
 	}
 
-	r.mu.Unlock()
-
 	log.Printf("玩家 [%s] 加入了房间 [%s]\n", client.GetID(), r.id)
 
 	r.Broadcast(client.GetID(), ActionJoin, "加入了房间")
@@ -209,9 +200,7 @@ func (r *Room) OnMessage(client *wscore.Client, message []byte) {
 		r.Broadcast(client.GetID(), ActionChat, msg.Content)
 	case ActionLeave:
 		// 客户端主动请求离开房间
-		r.mu.RLock()
 		isHost := client.GetID() == r.hostID
-		r.mu.RUnlock()
 
 		if isHost {
 			// 如果是房主主动离开，立刻触发房主转移，不等待 15 秒重连窗口
@@ -236,8 +225,6 @@ func (r *Room) OnDisconnect(client *wscore.Client) {
 		}
 	}()
 
-	r.mu.Lock()
-
 	// 只有当断开的连接是当前记录的连接时，才执行清理（防止顶号时旧连接断开误删新连接）
 	if r.users[client.GetID()] == client {
 		delete(r.users, client.GetID())
@@ -252,11 +239,8 @@ func (r *Room) OnDisconnect(client *wscore.Client) {
 		}
 	} else {
 		// 如果不是当前有效连接（比如被顶号踢掉的旧连接），直接忽略，不广播离开消息
-		r.mu.Unlock()
 		return
 	}
-
-	r.mu.Unlock()
 
 	log.Printf("玩家 [%s] 断开了与房间 [%s] 的连接\n", client.GetID(), r.id)
 
@@ -275,9 +259,6 @@ func (r *Room) handleRoomRecycleTimeout() {
 }
 
 func (r *Room) handleHostTransferTimeout() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	if len(r.users) > 0 {
 		var newHost string
 		for _, id := range r.joinOrder {
@@ -301,7 +282,9 @@ func (r *Room) watchEngineUpdates() {
 	for {
 		select {
 		case <-r.engine.UpdateChannel():
-			r.broadcastState()
+			r.hub.Execute(func() {
+				r.broadcastState()
+			})
 		case <-r.ctx.Done():
 			return
 		}
@@ -341,9 +324,6 @@ func (r *Room) getFullState(playerID string) map[string]any {
 
 // GetPlayers 获取当前房间内所有在线玩家的 ID
 func (r *Room) getPlayers() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	players := make([]string, 0, len(r.users))
 	for id := range r.users {
 		players = append(players, id)
