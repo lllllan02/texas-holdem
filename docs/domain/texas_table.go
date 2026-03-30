@@ -17,4 +17,29 @@ type Table struct {
 	HandCount   int             `json:"hand_count"`   // 当前桌子已经进行了多少局游戏
 	CurrentHand *Hand              `json:"current_hand"` // 当前正在进行的单局游戏实例（如果不在游戏中则为 nil）
 	Histories   []*ShowdownSummary `json:"histories"`    // 历史对局记录列表，用于战绩回放
+
+	// --- 内部依赖 ---
+	messenger Messenger `json:"-"` // 注入的消息发送器 (在 OnInit 时传入)
+}
+
+// OnInit 引擎初始化时调用
+func (t *Table) OnInit(messenger Messenger, options interface{}) error {
+	t.messenger = messenger
+	// 解析 options 并初始化 MaxPlayers, SmallBlind 等配置...
+	return nil
+}
+
+// OnDestroy 房间被销毁时调用
+func (t *Table) OnDestroy() {
+	// 清理定时器等资源
+}
+
+// OnPlayerJoin 玩家加入房间时调用
+func (t *Table) OnPlayerJoin(userID string) {
+	// 可以广播旁观者加入的消息
+}
+
+// OnPlayerLeave 玩家离开/掉线时调用
+func (t *Table) OnPlayerLeave(userID string) {
+	// 如果玩家在座位上，可能需要触发自动弃牌或站起逻辑
 }

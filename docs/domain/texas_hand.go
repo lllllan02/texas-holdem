@@ -4,6 +4,7 @@ package domain
 type Stage string
 
 const (
+	StageWaiting  Stage = "WAITING"  // 等待开局阶段
 	StagePreFlop  Stage = "PREFLOP"
 	StageFlop     Stage = "FLOP"
 	StageTurn     Stage = "TURN"

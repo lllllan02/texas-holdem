@@ -5,6 +5,7 @@ type PlayerState string
 
 const (
 	PlayerWaiting PlayerState = "waiting" // 等待下一局开始（刚坐下或刚补充筹码）
+	PlayerReady   PlayerState = "ready"   // 已准备，等待开局
 	PlayerActive  PlayerState = "active"  // 正常参与本局，且还有筹码
 	PlayerFolded  PlayerState = "folded"  // 本局已弃牌
 	PlayerAllIn   PlayerState = "allin"   // 本局已全下
