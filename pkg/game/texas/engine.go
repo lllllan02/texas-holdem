@@ -36,9 +36,8 @@ const (
 
 // Engine 德州扑克游戏引擎，实现了 room.GameEngine 接口
 type Engine struct {
-	room     *room.Room
-	Table    *Table
-	updateCh chan struct{}
+	room  *room.Room
+	Table *Table
 
 	// 引擎级控制状态
 	isPaused bool // 房主是否暂停了游戏（初始默认为 false，只要大家准备好就自动开始）
@@ -50,30 +49,17 @@ type Engine struct {
 // NewEngine 创建一个新的德州扑克游戏引擎
 func NewEngine() *Engine {
 	return &Engine{
-		updateCh: make(chan struct{}, 10),
 		isPaused: false, // 初始状态为未暂停，只要所有人准备就自动开始
 	}
 }
 
-// UpdateChannel 返回状态更新信号通道
-func (e *Engine) UpdateChannel() <-chan struct{} {
-	return e.updateCh
-}
-
-// triggerSync 触发状态同步广播
-func (e *Engine) triggerSync() {
-	select {
-	case e.updateCh <- struct{}{}:
-	default:
-	}
-}
-
 // OnInit 房间初始化时调用
-func (e *Engine) OnInit(room *room.Room, param map[string]any) {
+func (e *Engine) OnInit(room *room.Room, param map[string]any) error {
 	e.room = room
 	e.Table = NewTable(param)
 
 	log.Printf("[TexasEngine] 房间 %s 初始化德州扑克引擎\n", room.GetID())
+	return nil
 }
 
 // OnDestroy 房间销毁时调用
@@ -95,7 +81,7 @@ func (e *Engine) OnPlayerLeave(playerID string) {
 }
 
 // HandleMessage 处理游戏特定消息
-func (e *Engine) HandleMessage(playerID string, action string, content string) {
+func (e *Engine) HandleMessage(playerID string, action string, content []byte) {
 	// 路由拦截器：如果游戏处于暂停状态，拦截所有 game 级别的操作
 	if e.isPaused && strings.HasPrefix(action, "texas.game.") {
 		e.room.SendTo(playerID, "error", `{"message": "游戏已暂停，无法进行该操作"}`)
@@ -111,7 +97,7 @@ func (e *Engine) HandleMessage(playerID string, action string, content string) {
 	// 1. 无条件广播玩家的动作事件，用于驱动前端表现层（日志、动画等）
 	// 即使操作最终失败（比如还没轮到他说话），前端也可能需要知道他尝试了什么
 	// 注意：必须在执行具体 handle 之前广播，保证事件顺序（比如先发“下注”事件，再发“游戏结束”事件）
-	e.room.Broadcast(playerID, action, content)
+	e.room.Broadcast(playerID, action, json.RawMessage(content))
 
 	changed := false
 	switch action {
@@ -141,7 +127,7 @@ func (e *Engine) HandleMessage(playerID string, action string, content string) {
 
 	// 2. 如果操作成功导致了状态改变，触发全量状态同步
 	if changed {
-		e.triggerSync()
+		e.room.TriggerStateSync()
 	}
 }
 
@@ -175,11 +161,11 @@ func (e *Engine) handleToggleRunning(playerID string, targetPause bool) bool {
 	return true
 }
 
-func (e *Engine) handleSit(playerID string, content string) bool {
+func (e *Engine) handleSit(playerID string, content []byte) bool {
 	var req struct {
 		Seat int `json:"seat"`
 	}
-	if err := json.Unmarshal([]byte(content), &req); err != nil {
+	if err := json.Unmarshal(content, &req); err != nil {
 		log.Printf("[TexasEngine] 玩家 %s 坐下参数解析失败: %v\n", playerID, err)
 		return false
 	}
@@ -212,7 +198,7 @@ func (e *Engine) handleStand(playerID string) bool {
 	return true
 }
 
-func (e *Engine) handlePlayerAction(playerID string, action string, content string) bool {
+func (e *Engine) handlePlayerAction(playerID string, action string, content []byte) bool {
 	// 1. 找到玩家
 	seatIdx := e.Table.FindPlayerSeat(playerID)
 	if seatIdx == -1 {
@@ -225,7 +211,7 @@ func (e *Engine) handlePlayerAction(playerID string, action string, content stri
 		player.IsFolded = true
 	}
 
-	log.Printf("[TexasEngine] 玩家 %s 执行了动作 %s: %s\n", playerID, action, content)
+	log.Printf("[TexasEngine] 玩家 %s 执行了动作 %s: %s\n", playerID, action, string(content))
 
 	// 临时：模拟流程推进，现在改为推进轮次，而不是直接进入下一阶段
 	if e.Table.Round != nil {
@@ -360,7 +346,7 @@ func (e *Engine) scheduleNextHand(delay time.Duration) {
 			}
 
 			// 触发状态同步，把发牌等新状态推给前端
-			e.triggerSync()
+			e.room.TriggerStateSync()
 		})
 	}()
 }

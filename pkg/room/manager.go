@@ -46,7 +46,10 @@ func (m *RoomManager) CreateRoom(id string, hostID string, gameType string, para
 	}
 
 	engine := factory()
-	rm := NewRoom(id, hostID, engine, param, m)
+	rm, err := NewRoom(id, hostID, engine, param, m)
+	if err != nil {
+		return nil, err
+	}
 	m.rooms[id] = rm
 	return rm, nil
 }

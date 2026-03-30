@@ -24,8 +24,8 @@ const (
 
 // ClientMessage 客户端发送的消息结构
 type ClientMessage struct {
-	Action  string `json:"action"`
-	Content string `json:"content"`
+	Action  string          `json:"action"`
+	Content json.RawMessage `json:"content"`
 }
 
 // ServerMessage 服务端下发的消息结构

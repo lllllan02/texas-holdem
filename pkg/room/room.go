@@ -1,7 +1,6 @@
 package room
 
 import (
-	"context"
 	"encoding/json"
 	"log"
 	"sync"
@@ -40,10 +39,7 @@ type Room struct {
 	hostTransferTimer *time.Timer
 
 	// 房间生命周期控制
-	ctx    context.Context
-	cancel context.CancelFunc
-
-	// 确保 destroy 逻辑只执行一次
+	destroyCh   chan struct{}
 	destroyOnce sync.Once
 }
 
@@ -52,9 +48,7 @@ type Room struct {
 // 外部业务层如果想销毁房间，应该调用 manager.RemoveRoom(roomID)。
 func (r *Room) destroy() {
 	r.destroyOnce.Do(func() {
-		if r.cancel != nil {
-			r.cancel()
-		}
+		close(r.destroyCh)
 		r.roomRecycleTimer.Stop()
 		r.hostTransferTimer.Stop()
 		r.hub.Stop()
@@ -108,8 +102,7 @@ func (r *Room) KickPlayer(playerID string, reason string) {
 }
 
 // NewRoom 创建一个新房间
-func NewRoom(id string, hostID string, engine GameEngine, param map[string]any, manager *RoomManager) *Room {
-	ctx, cancel := context.WithCancel(context.Background())
+func NewRoom(id string, hostID string, engine GameEngine, param map[string]any, manager *RoomManager) (*Room, error) {
 	rm := &Room{
 		id:        id,
 		hostID:    hostID,
@@ -118,8 +111,7 @@ func NewRoom(id string, hostID string, engine GameEngine, param map[string]any, 
 		users:     make(map[string]*wscore.Client),
 		joinOrder: make([]string, 0),
 		hub:       wscore.NewHub(),
-		ctx:       ctx,
-		cancel:    cancel,
+		destroyCh: make(chan struct{}),
 	}
 
 	// 初始状态下房间为空，启动回收定时器（5 分钟内无人加入则销毁）
@@ -132,12 +124,14 @@ func NewRoom(id string, hostID string, engine GameEngine, param map[string]any, 
 	rm.hostTransferTimer.Stop()
 
 	if rm.engine != nil {
-		rm.engine.OnInit(rm, param)
-		go rm.watchEngineUpdates()
+		if err := rm.engine.OnInit(rm, param); err != nil {
+			rm.roomRecycleTimer.Stop()
+			return nil, err
+		}
 	}
 
 	go rm.hub.Run()
-	return rm
+	return rm, nil
 }
 
 // OnConnect 实现 wscore.MessageHandler 接口，处理客户端连接
@@ -278,17 +272,10 @@ func (r *Room) handleHostTransferTimeout() {
 	}
 }
 
-func (r *Room) watchEngineUpdates() {
-	for {
-		select {
-		case <-r.engine.UpdateChannel():
-			r.hub.Execute(func() {
-				r.broadcastState()
-			})
-		case <-r.ctx.Done():
-			return
-		}
-	}
+// TriggerStateSync 触发状态同步，向房间内所有玩家广播最新的游戏状态。
+// 引擎在状态发生改变时应当调用此方法。
+func (r *Room) TriggerStateSync() {
+	r.hub.Execute(r.broadcastState)
 }
 
 func (r *Room) broadcastState() {
