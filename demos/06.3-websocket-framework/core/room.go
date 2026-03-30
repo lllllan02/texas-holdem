@@ -65,7 +65,8 @@ func (r *Room) broadcastRoomState() {
 
 	players := state["players"].([]string)
 	for _, client := range r.Users {
-		players = append(players, client.GetContext().(*PlayerContext).Username+" ("+client.GetID()+")")
+		// players = append(players, client.GetContext().(*PlayerContext).Username+" ("+client.GetID()+")")
+		players = append(players, client.GetID()+" ("+client.GetID()+")")
 	}
 	state["players"] = players
 
@@ -124,7 +125,8 @@ func (r *Room) handleHostTransferTimeout() {
 			r.broadcastRoomState()
 
 			// 广播通知
-			outBytes := BuildServerMessage(nil, ActionHostChanged, "原房主掉线，房主已自动转移给 "+r.Users[newHost].GetContext().(*PlayerContext).Username)
+			// outBytes := BuildServerMessage(nil, ActionHostChanged, "原房主掉线，房主已自动转移给 "+r.Users[newHost].GetContext().(*PlayerContext).Username)
+			outBytes := BuildServerMessage(nil, ActionHostChanged, "原房主掉线，房主已自动转移给 "+r.Users[newHost].GetID())
 			r.Hub.BroadcastMessage(outBytes)
 		}
 	}
@@ -204,7 +206,7 @@ func (r *Room) OnMessage(client *Client, message []byte) {
 
 	// 强制覆盖为当前客户端的信息，防止伪造
 	msg.UserID = client.GetID()
-	msg.Username = client.GetContext().(*PlayerContext).Username
+	// msg.Username = client.GetContext().(*PlayerContext).Username
 
 	switch msg.Action {
 	case ActionChat:

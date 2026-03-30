@@ -118,7 +118,7 @@ func (h *APIHandler) ServeWS(c *gin.Context) {
 	}
 
 	// 3. 使用 wscore 框架处理 WebSocket 连接
-	wscore.ServeWS(rm.GetHub(), rm, userID, nil, c.Writer, c.Request)
+	wscore.ServeWS(rm.GetHub(), rm, userID, c.Writer, c.Request)
 
 	log.Printf("玩家 [%s](%s) 成功连接到房间 [%s] 的 WebSocket\n", username, userID, roomID)
 }

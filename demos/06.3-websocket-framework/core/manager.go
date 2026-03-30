@@ -151,10 +151,7 @@ func (m *RoomManager) ServeWS(c *gin.Context) {
 	}
 
 	// 3. 使用 wscore 框架处理 WebSocket 连接
-	ctx := &PlayerContext{
-		Username: username,
-	}
-	wscore.ServeWS(room.Hub, room, userID, ctx, c.Writer, c.Request)
+	wscore.ServeWS(room.Hub, room, userID, c.Writer, c.Request)
 
 	log.Printf("玩家 [%s](%s) 成功连接到房间 [%s] 的 WebSocket\n", username, userID, roomID)
 }
