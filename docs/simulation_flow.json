@@ -1,0 +1,586 @@
+[
+  {
+    "direction": "Alice -> Server",
+    "description": "Alice 请求加入房间（此时仅为旁观者，未落座）",
+    "message": {
+      "type": "join_room",
+      "payload": {
+        "room_id": "room-1001"
+      }
+    }
+  },
+  {
+    "direction": "Server -> Alice",
+    "description": "服务端欢迎 Alice，确认加入",
+    "message": {
+      "type": "welcome",
+      "payload": {
+        "user_id": "p1",
+        "room_id": "room-1001"
+      }
+    }
+  },
+  {
+    "direction": "Alice -> Server",
+    "description": "Alice 请求落座（选择座位 0，带入筹码 1000）",
+    "message": {
+      "type": "sit_down",
+      "payload": {
+        "room_id": "room-1001",
+        "seat_number": 0,
+        "buy_in": 1000
+      }
+    }
+  },
+  {
+    "direction": "Server -> All",
+    "description": "广播 Alice 落座",
+    "message": {
+      "type": "state_update",
+      "reason": "player_sat_down",
+      "payload": {
+        "room_id": "room-1001",
+        "stage": "WAITING",
+        "players": [
+          {
+            "id": "p1",
+            "name": "Alice",
+            "seat_number": 0,
+            "chips": 1000,
+            "state": "waiting"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "direction": "Bob -> Server",
+    "description": "Bob 请求加入房间",
+    "message": {
+      "type": "join_room",
+      "payload": {
+        "room_id": "room-1001"
+      }
+    }
+  },
+  {
+    "direction": "Server -> Bob",
+    "description": "服务端欢迎 Bob",
+    "message": {
+      "type": "welcome",
+      "payload": {
+        "user_id": "p2",
+        "room_id": "room-1001"
+      }
+    }
+  },
+  {
+    "direction": "Bob -> Server",
+    "description": "Bob 请求落座（选择座位 1，带入筹码 1000）",
+    "message": {
+      "type": "sit_down",
+      "payload": {
+        "room_id": "room-1001",
+        "seat_number": 1,
+        "buy_in": 1000
+      }
+    }
+  },
+  {
+    "direction": "Server -> All",
+    "description": "广播 Bob 落座",
+    "message": {
+      "type": "state_update",
+      "reason": "player_sat_down",
+      "payload": {
+        "room_id": "room-1001",
+        "stage": "WAITING",
+        "players": [
+          {
+            "id": "p1",
+            "name": "Alice",
+            "seat_number": 0,
+            "chips": 1000,
+            "state": "waiting"
+          },
+          {
+            "id": "p2",
+            "name": "Bob",
+            "seat_number": 1,
+            "chips": 1000,
+            "state": "waiting"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "direction": "Charlie -> Server",
+    "description": "Charlie 请求加入房间",
+    "message": {
+      "type": "join_room",
+      "payload": {
+        "room_id": "room-1001"
+      }
+    }
+  },
+  {
+    "direction": "Server -> Charlie",
+    "description": "服务端欢迎 Charlie",
+    "message": {
+      "type": "welcome",
+      "payload": {
+        "user_id": "p3",
+        "room_id": "room-1001"
+      }
+    }
+  },
+  {
+    "direction": "Charlie -> Server",
+    "description": "Charlie 请求落座（选择座位 2，带入筹码 1000）",
+    "message": {
+      "type": "sit_down",
+      "payload": {
+        "room_id": "room-1001",
+        "seat_number": 2,
+        "buy_in": 1000
+      }
+    }
+  },
+  {
+    "direction": "Server -> All",
+    "description": "广播 Charlie 落座",
+    "message": {
+      "type": "state_update",
+      "reason": "player_sat_down",
+      "payload": {
+        "room_id": "room-1001",
+        "stage": "WAITING",
+        "players": [
+          {
+            "id": "p1",
+            "name": "Alice",
+            "seat_number": 0,
+            "chips": 1000,
+            "state": "waiting"
+          },
+          {
+            "id": "p2",
+            "name": "Bob",
+            "seat_number": 1,
+            "chips": 1000,
+            "state": "waiting"
+          },
+          {
+            "id": "p3",
+            "name": "Charlie",
+            "seat_number": 2,
+            "chips": 1000,
+            "state": "waiting"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "direction": "Alice -> Server",
+    "description": "Alice 准备",
+    "message": {
+      "type": "ready",
+      "payload": {
+        "room_id": "room-1001"
+      }
+    }
+  },
+  {
+    "direction": "Bob -> Server",
+    "description": "Bob 准备",
+    "message": {
+      "type": "ready",
+      "payload": {
+        "room_id": "room-1001"
+      }
+    }
+  },
+  {
+    "direction": "Charlie -> Server",
+    "description": "Charlie 准备",
+    "message": {
+      "type": "ready",
+      "payload": {
+        "room_id": "room-1001"
+      }
+    }
+  },
+  {
+    "direction": "Server -> All",
+    "description": "所有人准备就绪，开始倒计时",
+    "message": {
+      "type": "countdown",
+      "payload": {
+        "room_id": "room-1001",
+        "seconds": 3
+      }
+    }
+  },
+  {
+    "direction": "Server -> All",
+    "description": "倒计时结束，通知牌局即将开始",
+    "message": {
+      "type": "start_hand",
+      "payload": {
+        "room_id": "room-1001"
+      }
+    }
+  },
+  {
+    "direction": "Server -> All",
+    "description": "牌局开始，发底牌并扣除盲注",
+    "message": {
+      "type": "state_update",
+      "reason": "hand_started",
+      "payload": {
+        "room_id": "room-1001",
+        "hand_count": 1,
+        "stage": "PREFLOP",
+        "pot": 30,
+        "current_bet": 20,
+        "button_seat": 2,
+        "board_cards": [],
+        "current_player": "p3",
+        "current_player_position": "BTN",
+        "current_player_index": 2,
+        "action_order": [2, 0, 1],
+        "side_pots": [],
+        "players": [
+          {
+            "id": "p1",
+            "name": "Alice",
+            "position": "SB",
+            "seat_number": 0,
+            "chips": 990,
+            "current_bet": 10,
+            "is_ai": false,
+            "state": "active",
+            "has_acted_this_round": false,
+            "hole_cards": ["As", "Kd"]
+          },
+          {
+            "id": "p2",
+            "name": "Bob",
+            "position": "BB",
+            "seat_number": 1,
+            "chips": 980,
+            "current_bet": 20,
+            "is_ai": false,
+            "state": "active",
+            "has_acted_this_round": false,
+            "hole_cards": null
+          },
+          {
+            "id": "p3",
+            "name": "Charlie",
+            "position": "BTN",
+            "seat_number": 2,
+            "chips": 1000,
+            "current_bet": 0,
+            "is_ai": false,
+            "state": "active",
+            "has_acted_this_round": false,
+            "hole_cards": null
+          }
+        ]
+      }
+    }
+  },
+  {
+    "direction": "Server -> P3(Charlie)",
+    "description": "通知 Charlie (BTN) 行动",
+    "message": {
+      "type": "turn_notification",
+      "payload": {
+        "player_id": "p3",
+        "is_ai": false,
+        "position": "BTN",
+        "valid_actions": ["fold", "call", "raise", "allin"],
+        "action_details": {
+          "call_amount": 20,
+          "min_raise": 40,
+          "max_raise": 1000,
+          "allin_amount": 1000
+        },
+        "timeout_seconds": 30
+      }
+    }
+  },
+  {
+    "direction": "P3(Charlie) -> Server",
+    "description": "Charlie 选择加注到 40",
+    "message": {
+      "type": "action",
+      "payload": {
+        "room_id": "room-1001",
+        "action": "raise",
+        "amount": 40
+      }
+    }
+  },
+  {
+    "direction": "Server -> All",
+    "description": "广播 Charlie 的加注操作，轮到 Alice (SB)",
+    "message": {
+      "type": "state_update",
+      "reason": "player_action",
+      "payload": {
+        "room_id": "room-1001",
+        "hand_count": 1,
+        "stage": "PREFLOP",
+        "pot": 70,
+        "current_bet": 40,
+        "button_seat": 2,
+        "board_cards": [],
+        "current_player": "p1",
+        "current_player_position": "SB",
+        "current_player_index": 0,
+        "action_order": [0, 1],
+        "side_pots": [],
+        "last_action": {
+          "player_id": "p3",
+          "action": "raise",
+          "amount": 40
+        },
+        "players": [
+          {
+            "id": "p1",
+            "name": "Alice",
+            "position": "SB",
+            "seat_number": 0,
+            "chips": 990,
+            "current_bet": 10,
+            "is_ai": false,
+            "state": "active",
+            "has_acted_this_round": false,
+            "hole_cards": ["As", "Kd"]
+          },
+          {
+            "id": "p2",
+            "name": "Bob",
+            "position": "BB",
+            "seat_number": 1,
+            "chips": 980,
+            "current_bet": 20,
+            "is_ai": false,
+            "state": "active",
+            "has_acted_this_round": false,
+            "hole_cards": null
+          },
+          {
+            "id": "p3",
+            "name": "Charlie",
+            "position": "BTN",
+            "seat_number": 2,
+            "chips": 960,
+            "current_bet": 40,
+            "is_ai": false,
+            "state": "active",
+            "has_acted_this_round": true,
+            "hole_cards": null
+          }
+        ]
+      }
+    }
+  },
+  {
+    "direction": "Server -> P1(Alice)",
+    "description": "通知 Alice (SB) 行动",
+    "message": {
+      "type": "turn_notification",
+      "payload": {
+        "player_id": "p1",
+        "is_ai": false,
+        "position": "SB",
+        "valid_actions": ["fold", "call", "raise", "allin"],
+        "action_details": {
+          "call_amount": 30,
+          "min_raise": 60,
+          "max_raise": 990,
+          "allin_amount": 990
+        },
+        "timeout_seconds": 30
+      }
+    }
+  },
+  {
+    "direction": "P1(Alice) -> Server",
+    "description": "Alice 弃牌",
+    "message": {
+      "type": "action",
+      "payload": {
+        "room_id": "room-1001",
+        "action": "fold",
+        "amount": 0
+      }
+    }
+  },
+  {
+    "direction": "Server -> All",
+    "description": "广播 Alice 弃牌，轮到 Bob (BB)",
+    "message": {
+      "type": "state_update",
+      "reason": "player_action",
+      "payload": {
+        "room_id": "room-1001",
+        "hand_count": 1,
+        "stage": "PREFLOP",
+        "pot": 70,
+        "current_bet": 40,
+        "button_seat": 2,
+        "board_cards": [],
+        "current_player": "p2",
+        "current_player_position": "BB",
+        "current_player_index": 1,
+        "action_order": [1],
+        "side_pots": [],
+        "last_action": {
+          "player_id": "p1",
+          "action": "fold",
+          "amount": 0
+        },
+        "players": [
+          {
+            "id": "p1",
+            "name": "Alice",
+            "position": "SB",
+            "seat_number": 0,
+            "chips": 990,
+            "current_bet": 10,
+            "is_ai": false,
+            "state": "folded",
+            "has_acted_this_round": true,
+            "hole_cards": ["As", "Kd"]
+          },
+          {
+            "id": "p2",
+            "name": "Bob",
+            "position": "BB",
+            "seat_number": 1,
+            "chips": 980,
+            "current_bet": 20,
+            "is_ai": false,
+            "state": "active",
+            "has_acted_this_round": false,
+            "hole_cards": null
+          },
+          {
+            "id": "p3",
+            "name": "Charlie",
+            "position": "BTN",
+            "seat_number": 2,
+            "chips": 960,
+            "current_bet": 40,
+            "is_ai": false,
+            "state": "active",
+            "has_acted_this_round": true,
+            "hole_cards": null
+          }
+        ]
+      }
+    }
+  },
+  {
+    "direction": "Server -> P2(Bob)",
+    "description": "通知 Bob (BB) 行动",
+    "message": {
+      "type": "turn_notification",
+      "payload": {
+        "player_id": "p2",
+        "is_ai": false,
+        "position": "BB",
+        "valid_actions": ["fold", "call", "raise", "allin"],
+        "action_details": {
+          "call_amount": 20,
+          "min_raise": 60,
+          "max_raise": 980,
+          "allin_amount": 980
+        },
+        "timeout_seconds": 30
+      }
+    }
+  },
+  {
+    "direction": "P2(Bob) -> Server",
+    "description": "Bob 跟注 20 (补齐到 40)",
+    "message": {
+      "type": "action",
+      "payload": {
+        "room_id": "room-1001",
+        "action": "call",
+        "amount": 20
+      }
+    }
+  },
+  {
+    "direction": "Server -> All",
+    "description": "广播 Bob 跟注，PREFLOP 结束，进入 FLOP 阶段并发牌",
+    "message": {
+      "type": "state_update",
+      "reason": "board_dealt",
+      "payload": {
+        "room_id": "room-1001",
+        "hand_count": 1,
+        "stage": "FLOP",
+        "pot": 90,
+        "current_bet": 0,
+        "button_seat": 2,
+        "board_cards": ["2h", "7c", "Qd"],
+        "current_player": "p2",
+        "current_player_position": "BB",
+        "current_player_index": 1,
+        "action_order": [1, 2],
+        "side_pots": [],
+        "last_action": {
+          "stage": "FLOP",
+          "board_cards": ["2h", "7c", "Qd"]
+        },
+        "players": [
+          {
+            "id": "p1",
+            "name": "Alice",
+            "position": "SB",
+            "seat_number": 0,
+            "chips": 990,
+            "current_bet": 0,
+            "is_ai": false,
+            "state": "folded",
+            "has_acted_this_round": false,
+            "hole_cards": ["As", "Kd"]
+          },
+          {
+            "id": "p2",
+            "name": "Bob",
+            "position": "BB",
+            "seat_number": 1,
+            "chips": 960,
+            "current_bet": 0,
+            "is_ai": false,
+            "state": "active",
+            "has_acted_this_round": false,
+            "hole_cards": null
+          },
+          {
+            "id": "p3",
+            "name": "Charlie",
+            "position": "BTN",
+            "seat_number": 2,
+            "chips": 960,
+            "current_bet": 0,
+            "is_ai": false,
+            "state": "active",
+            "has_acted_this_round": false,
+            "hole_cards": null
+          }
+        ]
+      }
+    }
+  }
+]

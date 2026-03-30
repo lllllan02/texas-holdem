@@ -3,7 +3,7 @@ package texas
 // HandHistory 单局历史记录，用于对局结束后保存和查看
 type HandHistory struct {
 	HandID          string           `json:"hand_id"`           // 本局唯一ID
-	TableID         string           `json:"table_id"`          // 关联的桌子ID
+	RoomID        string           `json:"room_id"`          // 关联的桌子/房间ID
 	HandCount       int              `json:"hand_count"`        // 第几局
 	Timestamp       int64            `json:"timestamp"`         // 结束时间戳
 	BoardCards      []string         `json:"board_cards"`       // 最终公共牌

@@ -15,7 +15,7 @@ const (
 type Hand struct {
 	// --- 基础信息 ---
 	ID        string `json:"id"`         // 本局唯一ID (如 "hand-12345")
-	TableID   string `json:"table_id"`   // 关联的桌子ID (原 match_id)
+	RoomID    string `json:"room_id"`    // 关联的房间ID (原 match_id)
 	HandCount int    `json:"hand_count"` // 当前是第几局（对应 poker.json 的 hand_count）
 	Stage     Stage  `json:"stage"`      // 当前阶段 (PREFLOP, FLOP, TURN, RIVER, SHOWDOWN)
 
