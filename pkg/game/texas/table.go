@@ -22,7 +22,7 @@ type Table struct {
 
 	// --- 牌桌运行时状态 (随着游戏进行不断变化) ---
 	Seats       []*Seat            // 座位数组，长度等于 MaxPlayers
-	Claimed     map[string]bool    // 标记玩家是否已经领取过初始筹码 (Key: UserID)
+	Players     map[string]*Player // 记录所有参与过本桌游戏的玩家实体，用于恢复筹码和买入次数 (Key: UserID)
 	ButtonSeat  int                // 当前庄家 (Dealer/Button) 所在的座位号
 	HandCount   int                // 当前桌子已经进行了多少局游戏
 	CurrentHand *Hand              // 当前正在进行的单局游戏实例（如果不在游戏中则为 nil）
@@ -34,7 +34,7 @@ type Table struct {
 // 注意：此时不解析业务配置，只做最基础的内存结构初始化
 func NewTable() *Table {
 	return &Table{
-		Claimed:    make(map[string]bool),
+		Players:    make(map[string]*Player),
 		ButtonSeat: -1, // 游戏未开始时没有庄家，用 -1 表示
 		HandCount:  0,
 		Histories:  make([]*ShowdownSummary, 0),
@@ -179,23 +179,87 @@ func (t *Table) Resume() error {
 
 // HandleMessage 处理游戏内的具体动作
 func (t *Table) HandleMessage(userID string, msgType string, payload []byte) error {
+	// 1. 如果游戏被暂停，拒绝处理任何动作
+	if t.IsPaused {
+		return fmt.Errorf("game is paused")
+	}
+
+	// 2. 统一的生命周期阶段校验
+	// 局外动作 (SitDown, StandUp, Ready, CancelReady) 只能在游戏未开始时执行
+	// 局内动作 (Action) 只能在游戏进行中执行
+	isGameRunning := t.CurrentHand != nil
+
+	switch msgType {
+	case MsgTypeSitDown, MsgTypeStandUp, MsgTypeReady, MsgTypeCancel:
+		if isGameRunning {
+			return fmt.Errorf("cannot perform out-of-game action '%s' while game is running", msgType)
+		}
+	case MsgTypeAction:
+		if !isGameRunning {
+			return fmt.Errorf("cannot perform in-game action '%s' while game is not running", msgType)
+		}
+	}
+
+	// 3. 路由到具体的处理函数
 	switch msgType {
 	case MsgTypeSitDown:
-		// TODO: 处理落座
-		// t.checkAndAutoStart() // 落座后如果满员且都准备了，可能触发开局
+		return t.handleSitDown(userID, payload)
 	case MsgTypeStandUp:
-		// TODO: 处理站起
+		return t.handleStandUp(userID)
 	case MsgTypeReady:
-		// TODO: 处理准备
-		// 准备后可能触发开局
-		t.checkAndAutoStart()
+		return t.handleReady(userID)
 	case MsgTypeCancel:
-		// TODO: 处理取消准备
+		return t.handleCancelReady(userID)
 	case MsgTypeAction:
-		// TODO: 解析 payload 为 ClientActionPayload，并调用 processPlayerAction
+		return t.handleAction(userID, payload)
 	default:
 		// 忽略不认识的消息
+		return nil
 	}
+}
+
+// ============================================================================
+// 动作处理逻辑骨架 (Action Handlers)
+// ============================================================================
+
+func (t *Table) handleSitDown(userID string, payload []byte) error {
+	// TODO: 1. 解析 payload 获取目标座位号 (SeatNumber)
+	// TODO: 2. 校验座位是否合法且为空
+	// TODO: 3. 检查玩家是否已经在其他座位上。如果是，则执行“换座”逻辑：先清空原座位，再绑定到新座位。
+	// TODO: 4. 从 t.Players 中查找该玩家，如果不存在则创建新 Player 并分配初始筹码，记录到 t.Players 中；如果存在则直接复用（恢复筹码和 RebuyCount）
+	// TODO: 5. 将 Player 实体绑定到 Seat
+	// TODO: 6. 广播状态更新 (MsgTypeStateUpdate)
+	return nil
+}
+
+func (t *Table) handleStandUp(userID string) error {
+	// TODO: 1. 查找玩家所在座位
+	// TODO: 2. 游戏未开始，直接清空座位 (Seat.Player = nil, Seat.State = SeatEmpty)
+	// TODO: 3. 重置玩家状态 (Player.State = PlayerStateWaiting)
+	// TODO: 4. 如果当前正在进行开局倒计时 (Countdown)，必须打断/取消倒计时！
+	// TODO: 5. 广播状态更新 (MsgTypeStateUpdate)
+	return nil
+}
+
+func (t *Table) handleReady(userID string) error {
+	// TODO: 1. 查找玩家所在座位
+	// TODO: 2. 修改玩家状态为 PlayerStateReady
+	// TODO: 3. 广播状态更新 (MsgTypeStateUpdate)
+	// TODO: 4. 调用 t.checkAndAutoStart() 检查是否满足开局条件
+	return nil
+}
+
+func (t *Table) handleCancelReady(userID string) error {
+	// TODO: 1. 查找玩家所在座位
+	// TODO: 2. 修改玩家状态为 PlayerStateWaiting
+	// TODO: 3. 如果当前正在进行开局倒计时 (Countdown)，必须打断/取消倒计时！
+	// TODO: 4. 广播状态更新 (MsgTypeStateUpdate)
+	return nil
+}
+
+func (t *Table) handleAction(userID string, payload []byte) error {
+	// TODO: 1. 解析 payload 获取具体的打牌动作 (ActionType) 和金额 (Amount)
+	// TODO: 2. 调用 t.processPlayerAction(userID, actionType, amount)
 	return nil
 }
 
@@ -217,7 +281,7 @@ func (t *Table) checkAndAutoStart() {
 		return
 	}
 
-	// 2. 检查是否满员，且所有人都已准备
+	// 2. 检查是否满员，且所有人在座玩家都已准备
 	readyCount := 0
 	for _, seat := range t.Seats {
 		if seat.State == SeatEmpty || seat.Player == nil {
@@ -235,6 +299,6 @@ func (t *Table) checkAndAutoStart() {
 	}
 
 	// 4. 所有条件满足，自动触发发牌流程
-	// TODO: 可以在这里加一个 3 秒的倒计时，然后再 startNewHand()
+	// TODO: 可以在这里加一个 3 秒的倒计时 (需保存 Timer 引用以便在玩家取消准备/站起时打断)，然后再 startNewHand()
 	t.startNewHand()
 }

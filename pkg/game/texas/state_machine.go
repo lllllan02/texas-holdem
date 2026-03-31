@@ -77,7 +77,11 @@ func (t *Table) handleShowdown() {
 	// 5. 构建 ShowdownSummary，包含赢家、赢的金额、亮出的底牌
 	// 6. 广播结算快照
 	// 7. 记录对局历史 (Histories)
-	// 8. 延迟几秒后，清理牌桌，状态重置为 WAITING，准备下一局
+	// 8. 延迟几秒后，清理牌桌，状态重置为 WAITING
+	// 9. 破产清理与筹码补充：
+	//    - 休闲模式：遍历所有玩家，如果 Chips == 0，则自动为其补充 t.InitialChips 的筹码，并将其 RebuyCount + 1。
+	//    - TODO: 锦标赛模式 (SNG/MTT)：直接淘汰 (Eliminate) 破产玩家，不留座位。
+	// 10. 尝试自动开始下一局 (调用 checkAndAutoStart)
 
 	fmt.Println("TODO: handleShowdown - 比牌，分池，结算")
 }

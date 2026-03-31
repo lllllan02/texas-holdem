@@ -47,6 +47,7 @@ type PlayerSnapshot struct {
 	State             PlayerState  `json:"state"`                // 玩家状态 (如 waiting, active, folded, allin)
 	HasActedThisRound bool         `json:"has_acted_this_round"` // 玩家在本轮是否已经行动过
 	IsOffline         bool         `json:"is_offline"`           // 玩家是否处于断线/托管状态
+	RebuyCount        int          `json:"rebuy_count"`          // 玩家补充筹码的次数
 	HoleCards         []Card       `json:"hole_cards"`           // 玩家底牌（注意：如果是其他玩家且未摊牌，此字段必须为 nil）
 }
 
@@ -152,6 +153,7 @@ func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 			State:             p.State,
 			HasActedThisRound: p.HasActedThisRound,
 			IsOffline:         p.IsOffline,
+			RebuyCount:        p.RebuyCount,
 		}
 
 		// 【核心安全逻辑】：千人千面，只发该看的底牌
