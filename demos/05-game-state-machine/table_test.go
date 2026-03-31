@@ -26,14 +26,14 @@ func TestTableFlow_HappyPath(t *testing.T) {
 	// 那么第一个说话的是 P1 (UTG)
 	fmt.Println("\n>>> 2. PreFlop 阶段下注")
 	table.CurrentTurn = 0 // 强制设置为 P1
-	
+
 	// P1 Call 20
 	table.HandleAction(PlayerAction{PlayerID: "P1", Action: ActionCall, Amount: 20})
-	
+
 	// P2 (SB) Call 20 (补齐 10)
 	table.CurrentTurn = 1
 	table.HandleAction(PlayerAction{PlayerID: "P2", Action: ActionCall, Amount: 20})
-	
+
 	// P3 (BB) Check 20
 	table.CurrentTurn = 2
 	// 假设这里 isRoundOver 返回 true，触发 NextStage 进入 Flop
@@ -43,18 +43,18 @@ func TestTableFlow_HappyPath(t *testing.T) {
 	fmt.Println("\n>>> 3. Flop 阶段下注")
 	// Flop 阶段由 SB (P2) 先说话
 	table.CurrentTurn = 1
-	
+
 	// P2 Check
 	table.HandleAction(PlayerAction{PlayerID: "P2", Action: ActionCheck, Amount: 0})
-	
+
 	// P3 Bet 50
 	table.CurrentTurn = 2
 	table.HandleAction(PlayerAction{PlayerID: "P3", Action: ActionBet, Amount: 50})
-	
+
 	// P1 Fold
 	table.CurrentTurn = 0
 	table.HandleAction(PlayerAction{PlayerID: "P1", Action: ActionFold, Amount: 0})
-	
+
 	// P2 Call 50
 	table.CurrentTurn = 1
 	// 假设这里 isRoundOver 返回 true，触发 NextStage 进入 Turn
@@ -74,7 +74,7 @@ func TestTableFlow_HappyPath(t *testing.T) {
 	table.CurrentTurn = 2
 	// 假设这是最后一次操作，触发 Showdown
 	table.HandleAction(PlayerAction{PlayerID: "P3", Action: ActionCheck, Amount: 0})
-	
+
 	fmt.Println("\n>>> 游戏模拟结束")
 }
 
@@ -97,11 +97,11 @@ func TestTableFlow_EarlyEnd(t *testing.T) {
 	// P1 Raise 到 100
 	table.CurrentTurn = 0
 	table.HandleAction(PlayerAction{PlayerID: "P1", Action: ActionRaise, Amount: 100})
-	
+
 	// P2 Fold
 	table.CurrentTurn = 1
 	table.HandleAction(PlayerAction{PlayerID: "P2", Action: ActionFold, Amount: 0})
-	
+
 	// P3 Fold，触发提前结束
 	table.CurrentTurn = 2
 	// 假设这里触发了 ActivePlayersCount == 1 的条件，调用 EndHandEarly

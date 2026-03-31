@@ -237,7 +237,7 @@ func (t *Table) AdvanceTurn() {
 		p := t.Seats[nextIdx]
 		if p != nil && !p.IsFolded && p.Status == PlayerStatusNormal {
 			t.Round.CurrentTurn = nextIdx
-			
+
 			// 骨架逻辑：如果转到了 LastActionIdx（一圈结束），就进入下一阶段
 			// 假设 LastActionIdx 初始为庄家后面的那个人
 			if nextIdx == t.Round.LastActionIdx {

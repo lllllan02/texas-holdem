@@ -16,7 +16,7 @@ func NewDeck() *Deck {
 	deck := &Deck{
 		Cards: make([]Card, 0, 52),
 	}
-	
+
 	// 遍历 4 种花色和 13 种点数，生成 52 张牌
 	for suit := Spades; suit <= Clubs; suit++ {
 		for rank := Rank2; rank <= RankA; rank++ {
@@ -30,7 +30,7 @@ func NewDeck() *Deck {
 func (d *Deck) Shuffle() {
 	// 初始化随机数种子
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	
+
 	// r.Shuffle 是 Go 1.10 引入的内置洗牌函数
 	r.Shuffle(len(d.Cards), func(i, j int) {
 		d.Cards[i], d.Cards[j] = d.Cards[j], d.Cards[i]
@@ -50,9 +50,9 @@ func (d *Deck) Draw(n int) ([]Card, error) {
 	// 从切片尾部取牌（效率更高，不需要移动前面的元素）
 	drawn := make([]Card, n)
 	copy(drawn, d.Cards[len(d.Cards)-n:])
-	
+
 	// 更新牌堆切片，移除已经抽出的牌
 	d.Cards = d.Cards[:len(d.Cards)-n]
-	
+
 	return drawn, nil
 }

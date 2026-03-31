@@ -219,7 +219,7 @@ func ServeWS(hub *Hub, w http.ResponseWriter, r *http.Request) {
 		log.Println("Upgrade error:", err)
 		return
 	}
-	
+
 	client := &Client{
 		hub:      hub,
 		Conn:     conn,

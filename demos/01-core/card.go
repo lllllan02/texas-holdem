@@ -14,19 +14,19 @@ const (
 type Rank int
 
 const (
-	Rank2 Rank = iota + 2 // 2
-	Rank3                 // 3
-	Rank4                 // 4
-	Rank5                 // 5
-	Rank6                 // 6
-	Rank7                 // 7
-	Rank8                 // 8
-	Rank9                 // 9
-	Rank10                // 10
-	RankJ                 // 11 (Jack)
-	RankQ                 // 12 (Queen)
-	RankK                 // 13 (King)
-	RankA                 // 14 (Ace)
+	Rank2  Rank = iota + 2 // 2
+	Rank3                  // 3
+	Rank4                  // 4
+	Rank5                  // 5
+	Rank6                  // 6
+	Rank7                  // 7
+	Rank8                  // 8
+	Rank9                  // 9
+	Rank10                 // 10
+	RankJ                  // 11 (Jack)
+	RankQ                  // 12 (Queen)
+	RankK                  // 13 (King)
+	RankA                  // 14 (Ace)
 )
 
 // Card 表示一张扑克牌
@@ -39,6 +39,6 @@ type Card struct {
 func (c Card) String() string {
 	suits := []string{"♠", "♥", "♦", "♣"}
 	ranks := []string{"", "", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"}
-	
+
 	return suits[c.Suit] + ranks[c.Rank]
 }

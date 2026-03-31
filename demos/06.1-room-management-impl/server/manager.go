@@ -46,10 +46,10 @@ func (m *RoomManager) CreateRoom() *Room {
 			break
 		}
 	}
-	
+
 	room := NewRoom(roomID)
 	m.Rooms[roomID] = room
-	
+
 	fmt.Printf("创建房间成功: [%s]\n", roomID)
 	return room
 }
@@ -102,7 +102,7 @@ func (m *RoomManager) ServeWS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing room or userId parameter", http.StatusBadRequest)
 		return
 	}
-	
+
 	if username == "" {
 		username = "游客_" + userID[:4]
 	}
@@ -124,7 +124,7 @@ func (m *RoomManager) ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	// 4. 尝试加入房间 (如果房间不存在，为了测试方便我们自动创建)
 	m.GetOrCreateRoom(roomID)
-	
+
 	err = m.JoinRoom(roomID, client)
 	if err != nil {
 		fmt.Printf("玩家 [%s] 加入房间 [%s] 失败: %v\n", userID, roomID, err)
@@ -136,6 +136,6 @@ func (m *RoomManager) ServeWS(w http.ResponseWriter, r *http.Request) {
 	// 5. 启动读写 Goroutine
 	go client.WritePump()
 	go client.ReadPump()
-	
+
 	fmt.Printf("玩家 [%s](%s) 成功连接到房间 [%s] 的 WebSocket\n", username, userID, roomID)
 }

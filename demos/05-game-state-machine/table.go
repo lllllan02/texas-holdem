@@ -60,13 +60,13 @@ func (t *Table) StartHand() error {
 	fmt.Println("=== 游戏开始 ===")
 	// TODO: 检查玩家人数是否足够 (>=2)
 	// TODO: 初始化 Deck 并洗牌
-	
+
 	t.moveButtonAndBlinds()
 	t.postBlind(t.SmallBlindIdx, t.SmallBlind)
 	t.postBlind(t.BigBlindIdx, t.BigBlind)
-	
+
 	t.dealCards(2, false)
-	
+
 	t.Stage = StagePreFlop
 	fmt.Println("-> 进入阶段:", t.Stage)
 	// TODO: 将 CurrentTurn 设置为 BB 的下一个人 (UTG)
@@ -79,21 +79,21 @@ func (t *Table) HandleAction(action PlayerAction) error {
 	fmt.Printf("玩家 [%s] 执行动作: %s, 金额: %d\n", action.PlayerID, action.Action, action.Amount)
 	// TODO: 验证当前是否轮到该玩家 (action.PlayerID == t.Players[t.CurrentTurn].ID)
 	// TODO: 验证操作类型是否合法 (比如不能在有人下注时 Check)
-	
+
 	// TODO: 根据 action.Action 执行具体逻辑 (Fold, Check, Call, Raise)
 	//       - 如果是 Fold，更新 IsFolded，减少 ActivePlayersCount
 	//       - 如果是 Call/Raise，调用 t.processBet() 扣除筹码
 	//       - 更新玩家状态 (HasActed, LastAction)
-	
+
 	// TODO: 检查是否触发了提前结束条件 (ActivePlayersCount == 1)
 	//       如果是，直接调用 t.EndHandEarly()
-	
+
 	if t.isRoundOver() {
 		t.NextStage()
 	} else {
 		t.CurrentTurn = t.getNextPlayerIndex(t.CurrentTurn)
 	}
-	
+
 	return nil
 }
 
@@ -105,7 +105,7 @@ func (t *Table) HandleAction(action PlayerAction) error {
 // 职责：收集筹码、发公共牌、重置轮次状态
 func (t *Table) NextStage() {
 	t.collectPots()
-	
+
 	switch t.Stage {
 	case StagePreFlop:
 		t.Stage = StageFlop
@@ -121,9 +121,9 @@ func (t *Table) NextStage() {
 		t.ResolveShowdown()
 		return
 	}
-	
+
 	fmt.Println("-> 进入阶段:", t.Stage)
-	
+
 	// TODO: 重置所有玩家的 BetThisRound, HasActed, LastAction
 	// TODO: 将 CurrentTurn 设置为 Button 之后的第一个未弃牌玩家
 }

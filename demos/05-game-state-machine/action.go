@@ -20,7 +20,6 @@ const (
 	ActionRaise ActionType = "GAME.RAISE" // 加注
 )
 
-
 // PlayerAction 表示玩家发起的一个动作请求
 type PlayerAction struct {
 	PlayerID string

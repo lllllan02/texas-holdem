@@ -49,7 +49,7 @@ func (h *Hub) Run() {
 				if h.Users[client.UserID] == client {
 					delete(h.Users, client.UserID)
 				}
-				
+
 				if !client.closed {
 					client.closed = true
 					close(client.Send)

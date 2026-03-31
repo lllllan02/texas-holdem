@@ -18,7 +18,7 @@ func main() {
 	// 3. 注册 HTTP 路由
 	// 3.1 静态文件服务 (前端页面)
 	http.Handle("/", http.FileServer(http.Dir("./static")))
-	
+
 	// 3.2 WebSocket 升级接口
 	http.HandleFunc("/ws", manager.ServeWS)
 

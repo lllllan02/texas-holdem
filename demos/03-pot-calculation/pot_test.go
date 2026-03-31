@@ -109,7 +109,7 @@ func TestDistributePot(t *testing.T) {
 				Amount:  100,
 				Players: []string{"B", "C"},
 			},
-			winners: []string{"A"},
+			winners:  []string{"A"},
 			expected: map[string]int{},
 		},
 	}

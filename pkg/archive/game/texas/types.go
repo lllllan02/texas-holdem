@@ -2,16 +2,16 @@ package texas
 
 // StateUpdatePayload 状态更新的完整载荷
 type StateUpdatePayload struct {
-	Stage         GameStage      `json:"stage"`
-	Pot           int            `json:"pot"`
-	CurrentBet    int            `json:"current_bet"`
-	ButtonSeat    int            `json:"button_seat"`
-	Players       []PlayerInfo   `json:"players"`
-	CurrentPlayer string         `json:"current_player,omitempty"`
-	CurrentPlayerIdx int         `json:"current_player_index"`
-	BoardCards    []string       `json:"board_cards"`
-	SidePots      []SidePotInfo  `json:"side_pots"`
-	LastAction    *ActionInfo    `json:"last_action,omitempty"`
+	Stage            GameStage     `json:"stage"`
+	Pot              int           `json:"pot"`
+	CurrentBet       int           `json:"current_bet"`
+	ButtonSeat       int           `json:"button_seat"`
+	Players          []PlayerInfo  `json:"players"`
+	CurrentPlayer    string        `json:"current_player,omitempty"`
+	CurrentPlayerIdx int           `json:"current_player_index"`
+	BoardCards       []string      `json:"board_cards"`
+	SidePots         []SidePotInfo `json:"side_pots"`
+	LastAction       *ActionInfo   `json:"last_action,omitempty"`
 }
 
 type PlayerInfo struct {

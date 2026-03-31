@@ -1,16 +1,16 @@
 package texas
 
-// ShowdownSummary 结算结果摘要
+// ShowdownSummary 结算结果摘要 (严格对齐 poker.json 的 showdown_summary)
 type ShowdownSummary struct {
-	ShowCards bool       `json:"show_cards"`          // 是否需要亮牌（例如只有一人未弃牌则无需亮牌）
-	AllHands  []HandInfo `json:"all_hands,omitempty"` // 所有参与比牌的玩家的牌型信息
-	SidePots  []Pot      `json:"side_pots"`           // 奖池分配结果（每个奖池包含各自的赢家和赢取金额）
+	BoardCards []Card     // 最终的公共牌（最多5张）
+	ShowCards  bool       // 是否需要亮牌
+	SidePots   []*SidePot // 奖池分配结果
+	AllHands   []HandInfo // 参与比牌的玩家牌型信息
 }
 
 // HandInfo 玩家的牌型信息
 type HandInfo struct {
-	PlayerID     string   `json:"player_id"`
-	Cards        []string `json:"cards"`
-	HandName     string   `json:"hand_name"`
-	HandStrength int64    `json:"hand_strength"`
+	PlayerID string
+	Cards    []Card   // 玩家的底牌
+	HandRank HandRank // 牌型等级
 }

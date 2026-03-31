@@ -38,7 +38,7 @@ func (m *RoomManager) CreateRoom(roomID string) *Room {
 	// 实际应用中需要随机生成 roomID 并确保不重复
 	room := NewRoom(roomID)
 	m.Rooms[roomID] = room
-	
+
 	fmt.Printf("创建房间成功: [%s]\n", roomID)
 	return room
 }
@@ -104,6 +104,6 @@ func (m *RoomManager) ServeWS(w http.ResponseWriter, r *http.Request) {
 	// 5. 启动读写 Goroutine (骨架)
 	// go client.WritePump()
 	// go client.ReadPump()
-	
+
 	fmt.Printf("玩家 [%s] 成功连接到房间 [%s] 的 WebSocket\n", playerID, roomID)
 }
