@@ -16,3 +16,10 @@ type Message struct {
 	// 发送时：Engine 传入具体的 struct，由 Handler 序列化
 	Payload any `json:"payload,omitempty"`
 }
+
+// ============================================================================
+// 服务端 -> 客户端：系统级消息类型 (Server -> Client MsgType)
+// ============================================================================
+const (
+	MsgTypeError = "sys.error" // 错误提示
+)

@@ -1,6 +1,11 @@
 package texas
 
-import "github.com/lllllan02/texas-holdem/pkg/core"
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/lllllan02/texas-holdem/pkg/core"
+)
 
 // Table 德州扑克牌桌 (GameEngine 的具体实现)
 // 负责管理跨局的持久化状态，包括座位分配、庄家位置的流转以及对局历史。
@@ -24,28 +29,118 @@ type Table struct {
 	Histories   []*ShowdownSummary // 历史对局记录列表，用于战绩回放
 }
 
+// NewTable 创建一个新的德州扑克牌桌实例
+// 注意：此时不解析业务配置，只做最基础的内存结构初始化
+func NewTable() *Table {
+	return &Table{
+		Claimed:    make(map[string]bool),
+		ButtonSeat: -1, // 游戏未开始时没有庄家，用 -1 表示
+		HandCount:  0,
+		Histories:  make([]*ShowdownSummary, 0),
+	}
+}
+
 // 确保 Table 实现了 core.GameEngine 接口
 var _ core.GameEngine = (*Table)(nil)
 
 // OnInit 引擎初始化时调用，注入消息发送器和游戏配置
-func (t *Table) OnInit(messenger core.Messenger, options any) error {
-	// TODO: 保存 messenger，解析 options 并初始化牌桌状态
+func (t *Table) OnInit(messenger core.Messenger, options []byte) error {
+	type TableOptions struct {
+		MaxPlayers    int `json:"max_players"`    // 最大座位数 (通常为 2, 6, 9)
+		SmallBlind    int `json:"small_blind"`    // 小盲注金额
+		BigBlind      int `json:"big_blind"`      // 大盲注金额
+		InitialChips  int `json:"initial_chips"`  // 初始筹码量
+		ActionTimeout int `json:"action_timeout"` // 玩家行动超时时间(秒)
+	}
+
+	t.messenger = messenger
+
+	// 1. 解析配置
+	var opts TableOptions
+	if len(options) > 0 {
+		if err := json.Unmarshal(options, &opts); err != nil {
+			return fmt.Errorf("failed to parse table options: %w", err)
+		}
+	}
+
+	// 2. 设置默认值
+	if opts.MaxPlayers <= 0 {
+		opts.MaxPlayers = 9
+	}
+	if opts.BigBlind <= 0 {
+		opts.BigBlind = 20
+	}
+	if opts.SmallBlind <= 0 {
+		opts.SmallBlind = opts.BigBlind / 2
+	}
+	if opts.InitialChips <= 0 {
+		opts.InitialChips = opts.BigBlind * 100 // 默认带入 100 个大盲
+	}
+	if opts.ActionTimeout <= 0 {
+		opts.ActionTimeout = 30 // 默认 30 秒思考时间
+	}
+
+	// 3. 应用配置到 Table
+	t.MaxPlayers = opts.MaxPlayers
+	t.SmallBlind = opts.SmallBlind
+	t.BigBlind = opts.BigBlind
+	t.InitialChips = opts.InitialChips
+	t.ActionTimeout = opts.ActionTimeout
+
+	// 4. 根据 MaxPlayers 初始化座位数组
+	t.Seats = make([]*Seat, t.MaxPlayers)
+	for i := 0; i < t.MaxPlayers; i++ {
+		t.Seats[i] = &Seat{
+			SeatNumber: i,
+			State:      SeatEmpty,
+			Player:     nil,
+		}
+	}
+
 	return nil
 }
 
 // OnDestroy 引擎被销毁时调用，用于清理资源
 func (t *Table) OnDestroy() {
-	// TODO: 清理定时器等资源
+	// TODO: 停止当前可能正在运行的倒计时定时器 (Action Timer)
+	// TODO: 停止可能正在运行的延迟结算定时器 (Showdown Timer)
 }
 
 // OnPlayerJoin 玩家加入游戏时调用
+// 注意：这只是建立连接进入房间，并不代表落座。玩家默认是旁观者。
 func (t *Table) OnPlayerJoin(userID string) {
-	// TODO: 处理玩家加入逻辑（如分配座位或加入旁观）
+	// 1. 检查该玩家是否之前在座位上（断线重连）
+	if seat := t.getSeatByUserID(userID); seat != nil {
+		// 恢复在线状态
+		seat.Player.IsOffline = false
+		// 广播状态更新，通知其他人该玩家已重连
+		t.messenger.Broadcast(MsgTypeStateUpdate, "player_reconnected", t.BuildPublicSnapshot())
+	}
+
+	// 2. 发送当前的全局快照给该玩家，以便前端恢复画面
+	snap := t.BuildPersonalSnapshot(userID)
+	t.messenger.SendTo(userID, MsgTypeStateUpdate, "player_joined", snap)
 }
 
 // OnPlayerLeave 玩家离开游戏/掉线时调用
 func (t *Table) OnPlayerLeave(userID string) {
-	// TODO: 处理玩家离开逻辑（如托管或站起）
+	// 1. 查找该玩家是否在座位上
+	seat := t.getSeatByUserID(userID)
+
+	// 如果只是旁观者离开，不需要处理
+	if seat == nil {
+		return
+	}
+
+	// 2. 如果玩家在座位上，处理断线逻辑
+	// 注意：如果游戏正在进行中，我们不需要在这里做任何特殊处理（比如自动 Fold）。
+	// 因为轮到他行动时，系统自然会挂起一个倒计时，倒计时结束他没操作，状态机也会自动帮他 Check/Fold。
+	// 无论游戏是否开始，我们都只将他标记为“已断线/托管”，保留他的座位和筹码。
+	// 真正的清座逻辑（踢人）应该由另一个专门的定时器或房主手动触发。
+	seat.Player.IsOffline = true
+
+	// 3. 广播玩家离开的消息
+	t.messenger.Broadcast(MsgTypeStateUpdate, "player_left", t.BuildPublicSnapshot())
 }
 
 // GameType 获取当前游戏引擎的类型
@@ -55,13 +150,44 @@ func (t *Table) GameType() string {
 
 // StartGame 尝试开始游戏
 func (t *Table) StartGame() error {
-	// TODO: 检查人数，初始化牌局，开始发牌
-	return nil
+	// 1. 检查是否有正在进行的游戏
+	if t.CurrentHand != nil {
+		return fmt.Errorf("game is already running")
+	}
+
+	// 2. 统计准备好的玩家数量
+	readyCount := 0
+	for _, seat := range t.Seats {
+		if seat.State == SeatOccupied && seat.Player != nil {
+			if seat.Player.State == PlayerStateReady {
+				readyCount++
+			}
+		}
+	}
+
+	// 3. 检查人数是否满足最低开局要求 (至少 2 人)
+	if readyCount < 2 {
+		return fmt.Errorf("not enough players to start (need at least 2, got %d)", readyCount)
+	}
+
+	// 4. 所有条件满足，进入发牌流程
+	return t.startNewHand()
 }
 
 // HandleMessage 处理游戏内的具体动作
 func (t *Table) HandleMessage(userID string, msgType string, payload []byte) error {
-	// TODO: 解析客户端发来的具体动作（如 bet, fold, check）并更新状态机
+	switch msgType {
+	case MsgTypeSitDown:
+		// TODO: 处理落座
+	case MsgTypeStandUp:
+		// TODO: 处理站起
+	case MsgTypeReady:
+		// TODO: 处理准备
+	case MsgTypeAction:
+		// TODO: 解析 payload 为 ClientActionPayload，并调用 processPlayerAction
+	default:
+		// 忽略不认识的消息
+	}
 	return nil
 }
 
@@ -80,5 +206,16 @@ func (t *Table) Resume() error {
 // EndGame 强制结束或正常结束游戏
 func (t *Table) EndGame() error {
 	// TODO: 结算逻辑
+	return nil
+}
+
+// getSeatByUserID 根据 UserID 查找玩家所在的座位
+// 如果玩家不在座位上（比如是旁观者），返回 nil
+func (t *Table) getSeatByUserID(userID string) *Seat {
+	for _, s := range t.Seats {
+		if s.State == SeatOccupied && s.Player != nil && s.Player.User.ID == userID {
+			return s
+		}
+	}
 	return nil
 }

@@ -199,3 +199,24 @@ func (r Rank) String() string {
 	}
 	return "?"
 }
+
+// ============================================================================
+// 德州扑克专属消息类型 (Texas MsgType)
+// ============================================================================
+
+// 客户端 -> 服务端
+const (
+	MsgTypeSitDown = "texas.sit_down" // 请求落座
+	MsgTypeStandUp = "texas.stand_up" // 请求站起
+	MsgTypeReady   = "texas.ready"    // 准备
+	MsgTypeAction  = "texas.action"   // 游戏内动作 (fold, call, bet 等)
+)
+
+// 服务端 -> 客户端
+const (
+	MsgTypeStateUpdate      = "texas.state_update"      // 全量状态更新快照
+	MsgTypeCountdown        = "texas.countdown"         // 倒计时通知（如开局倒计时）
+	MsgTypeStartHand        = "texas.start_hand"        // 牌局正式开始
+	MsgTypeDealHoleCards    = "texas.deal_hole_cards"   // 私发底牌
+	MsgTypeTurnNotification = "texas.turn_notification" // 轮到某人行动的通知
+)

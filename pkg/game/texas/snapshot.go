@@ -45,6 +45,7 @@ type PlayerSnapshot struct {
 	CurrentBet        int          `json:"current_bet"`          // 玩家在本轮已下注的金额
 	State             PlayerState  `json:"state"`                // 玩家状态 (如 waiting, active, folded, allin)
 	HasActedThisRound bool         `json:"has_acted_this_round"` // 玩家在本轮是否已经行动过
+	IsOffline         bool         `json:"is_offline"`           // 玩家是否处于断线/托管状态
 	HoleCards         []Card       `json:"hole_cards"`           // 玩家底牌（注意：如果是其他玩家且未摊牌，此字段必须为 nil）
 }
 
@@ -148,16 +149,22 @@ func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 			CurrentBet:        p.CurrentBet,
 			State:             p.State,
 			HasActedThisRound: p.HasActedThisRound,
+			IsOffline:         p.IsOffline,
 		}
 
 		// 【核心安全逻辑】：千人千面，只发该看的底牌
 		// 什么时候能看到底牌？
 		// 1. 观察者就是玩家本人 (viewerID 不为空且匹配)
-		// 2. 游戏进入了 SHOWDOWN 摊牌阶段（所有人都能看）
-		if (viewerID != "" && p.User.ID == viewerID) || snap.Stage == HandStageShowdown {
+		// 2. 游戏进入了 SHOWDOWN 摊牌阶段，且该玩家【没有弃牌】（参与了最终比牌）
+		canSeeCards := false
+		if viewerID != "" && p.User.ID == viewerID {
+			canSeeCards = true
+		} else if snap.Stage == HandStageShowdown && p.State != PlayerStateFolded {
+			canSeeCards = true
+		}
+
+		if canSeeCards {
 			pSnap.HoleCards = p.HoleCards
-		} else {
-			pSnap.HoleCards = nil // 强制打码，防止透视挂
 		}
 
 		snap.Players = append(snap.Players, pSnap)

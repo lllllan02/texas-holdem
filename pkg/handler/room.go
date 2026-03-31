@@ -28,3 +28,20 @@ func (r *Room) Broadcast(msgType string, reason string, payload any) {
 func (r *Room) SendTo(userID string, msgType string, reason string, payload any) {
 	// TODO: 实现私发逻辑，通过 wscore 找到特定用户的连接并发送
 }
+
+// ============================================================================
+// 房间级消息类型 (Room MsgType)
+// ============================================================================
+
+// 客户端 -> 服务端
+const (
+	MsgTypeJoinRoom   = "room.join"   // 请求加入房间
+	MsgTypePauseGame  = "room.pause"  // 房主暂停游戏
+	MsgTypeResumeGame = "room.resume" // 房主恢复游戏
+)
+
+// 服务端 -> 客户端
+const (
+	MsgTypeWelcome    = "room.welcome" // 欢迎加入房间（返回分配的 UserID 等）
+	MsgTypeGamePaused = "room.paused"  // 游戏已暂停
+)

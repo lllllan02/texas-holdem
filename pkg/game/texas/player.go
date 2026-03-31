@@ -12,4 +12,5 @@ type Player struct {
 	CurrentBet        int         // 本轮（如 FLOP 圈）已经下注的筹码量
 	HoleCards         []Card      // 玩家的底牌（通常为 2 张）
 	HasActedThisRound bool        // 在当前下注圈是否已经表态过
+	IsOffline         bool        // 是否已断线（断线不代表离开座位，只是进入托管状态）
 }

@@ -7,7 +7,8 @@ type GameEngine interface {
 	// --- 生命周期钩子 (Lifecycle Hooks) ---
 
 	// OnInit 引擎初始化时调用，注入消息发送器和游戏配置
-	OnInit(messenger Messenger, options any) error
+	// options 通常是 JSON 格式的字节流，由具体的引擎自己去反序列化
+	OnInit(messenger Messenger, options []byte) error
 
 	// OnDestroy 引擎被销毁时调用，用于清理资源（如停止所有定时器）
 	OnDestroy()
