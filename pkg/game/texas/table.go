@@ -27,6 +27,7 @@ type Table struct {
 	HandCount   int                // 当前桌子已经进行了多少局游戏
 	CurrentHand *Hand              // 当前正在进行的单局游戏实例（如果不在游戏中则为 nil）
 	Histories   []*ShowdownSummary // 历史对局记录列表，用于战绩回放
+	IsPaused    bool               // 游戏是否处于暂停状态
 }
 
 // NewTable 创建一个新的德州扑克牌桌实例
@@ -42,6 +43,11 @@ func NewTable() *Table {
 
 // 确保 Table 实现了 core.GameEngine 接口
 var _ core.GameEngine = (*Table)(nil)
+
+// GameType 获取当前游戏引擎的类型
+func (t *Table) GameType() string {
+	return "texas"
+}
 
 // OnInit 引擎初始化时调用，注入消息发送器和游戏配置
 func (t *Table) OnInit(messenger core.Messenger, options []byte) error {
@@ -143,35 +149,32 @@ func (t *Table) OnPlayerLeave(userID string) {
 	t.messenger.Broadcast(MsgTypeStateUpdate, "player_left", t.BuildPublicSnapshot())
 }
 
-// GameType 获取当前游戏引擎的类型
-func (t *Table) GameType() string {
-	return "texas"
+// Pause 暂停游戏引擎（通常由房主触发）
+// 注意：此方法仅负责挂起引擎内部的状态和定时器。
+// TODO 调用方 (Handler) 在调用成功后，必须自行负责向客户端广播游戏暂停的消息。
+func (t *Table) Pause() error {
+	if t.IsPaused {
+		return fmt.Errorf("game is already paused")
+	}
+
+	t.IsPaused = true
+	// TODO: 如果有正在运行的倒计时（如玩家思考时间），需要将其挂起/冻结
+
+	return nil
 }
 
-// StartGame 尝试开始游戏
-func (t *Table) StartGame() error {
-	// 1. 检查是否有正在进行的游戏
-	if t.CurrentHand != nil {
-		return fmt.Errorf("game is already running")
+// Resume 恢复游戏引擎
+// 注意：此方法仅负责恢复引擎内部的状态和定时器。
+// TODO 调用方 (Handler) 在调用成功后，必须自行负责向客户端广播游戏恢复的消息（或发送全量快照）。
+func (t *Table) Resume() error {
+	if !t.IsPaused {
+		return fmt.Errorf("game is not paused")
 	}
 
-	// 2. 统计准备好的玩家数量
-	readyCount := 0
-	for _, seat := range t.Seats {
-		if seat.State == SeatOccupied && seat.Player != nil {
-			if seat.Player.State == PlayerStateReady {
-				readyCount++
-			}
-		}
-	}
+	t.IsPaused = false
+	// TODO: 恢复之前被挂起的倒计时
 
-	// 3. 检查人数是否满足最低开局要求 (至少 2 人)
-	if readyCount < 2 {
-		return fmt.Errorf("not enough players to start (need at least 2, got %d)", readyCount)
-	}
-
-	// 4. 所有条件满足，进入发牌流程
-	return t.startNewHand()
+	return nil
 }
 
 // HandleMessage 处理游戏内的具体动作
@@ -179,33 +182,20 @@ func (t *Table) HandleMessage(userID string, msgType string, payload []byte) err
 	switch msgType {
 	case MsgTypeSitDown:
 		// TODO: 处理落座
+		// t.checkAndAutoStart() // 落座后如果满员且都准备了，可能触发开局
 	case MsgTypeStandUp:
 		// TODO: 处理站起
 	case MsgTypeReady:
 		// TODO: 处理准备
+		// 准备后可能触发开局
+		t.checkAndAutoStart()
+	case MsgTypeCancel:
+		// TODO: 处理取消准备
 	case MsgTypeAction:
 		// TODO: 解析 payload 为 ClientActionPayload，并调用 processPlayerAction
 	default:
 		// 忽略不认识的消息
 	}
-	return nil
-}
-
-// Pause 暂停游戏引擎
-func (t *Table) Pause() error {
-	// TODO: 暂停逻辑
-	return nil
-}
-
-// Resume 恢复游戏引擎
-func (t *Table) Resume() error {
-	// TODO: 恢复逻辑
-	return nil
-}
-
-// EndGame 强制结束或正常结束游戏
-func (t *Table) EndGame() error {
-	// TODO: 结算逻辑
 	return nil
 }
 
@@ -218,4 +208,33 @@ func (t *Table) getSeatByUserID(userID string) *Seat {
 		}
 	}
 	return nil
+}
+
+// checkAndAutoStart 检查是否满足开局条件，如果满足则自动开始游戏
+func (t *Table) checkAndAutoStart() {
+	// 1. 检查是否有正在进行的游戏
+	if t.CurrentHand != nil {
+		return
+	}
+
+	// 2. 检查是否满员，且所有人都已准备
+	readyCount := 0
+	for _, seat := range t.Seats {
+		if seat.State == SeatEmpty || seat.Player == nil {
+			return // 未满员，不开始
+		}
+		if seat.Player.State != PlayerStateReady {
+			return // 有人未准备，不开始
+		}
+		readyCount++
+	}
+
+	// 3. 理论上满员检查已经保证了人数，但为了严谨还是校验一下
+	if readyCount < 2 {
+		return
+	}
+
+	// 4. 所有条件满足，自动触发发牌流程
+	// TODO: 可以在这里加一个 3 秒的倒计时，然后再 startNewHand()
+	t.startNewHand()
 }

@@ -19,6 +19,7 @@ type StateUpdateSnapshot struct {
 	MinRaise           int              `json:"min_raise"`                  // 当前合法的最小加注额
 	BoardCards         []Card           `json:"board_cards"`                // 桌面上的公共牌（最多 5 张）
 	CurrentPlayerIndex int              `json:"current_player_index"`       // 当前正在行动的玩家座位号 (-1 表示无人行动)
+	IsPaused           bool             `json:"is_paused"`                  // 游戏是否处于暂停状态
 	ActionOrder        []int            `json:"action_order"`               // 后续行动顺序队列
 	SidePots           []*SidePot       `json:"side_pots"`                  // 边池列表（当有玩家 All-in 时产生）
 	ShowdownSummary    *ShowdownSummary `json:"showdown_summary,omitempty"` // 摊牌结算信息（仅在 SHOWDOWN 阶段存在）
@@ -110,6 +111,7 @@ func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 	snap := StateUpdateSnapshot{
 		HandCount:  t.HandCount,
 		ButtonSeat: t.ButtonSeat,
+		IsPaused:   t.IsPaused,
 		Players:    make([]PlayerSnapshot, 0),
 	}
 

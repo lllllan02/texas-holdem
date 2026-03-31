@@ -209,6 +209,7 @@ const (
 	MsgTypeSitDown = "texas.sit_down" // 请求落座
 	MsgTypeStandUp = "texas.stand_up" // 请求站起
 	MsgTypeReady   = "texas.ready"    // 准备
+	MsgTypeCancel  = "texas.cancel"   // 取消准备
 	MsgTypeAction  = "texas.action"   // 游戏内动作 (fold, call, bet 等)
 )
 
