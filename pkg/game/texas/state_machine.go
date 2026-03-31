@@ -26,13 +26,23 @@ func (t *Table) startNewHand() error {
 
 // processPlayerAction 处理玩家的具体下注/弃牌动作
 func (t *Table) processPlayerAction(playerID string, action ActionType, amount int) error {
-	// 1. 校验是否轮到该玩家行动
-	// 2. 校验动作是否合法 (比如余额是否足够，加注是否达到最小加注额)
-	// 3. 根据动作更新玩家状态 (Chips, CurrentBet, State)
-	// 4. 更新底池状态 (Pot, CurrentBet, MinRaise)
-	// 5. 标记该玩家本轮已行动 (HasActedThisRound = true)
-	// 6. 广播玩家的动作 (ActionInfo)
-	// 7. 推进状态机 (advanceStateMachine)
+	// 1. 校验动作是否合法 (比如余额是否足够，加注是否达到最小加注额)
+	// TODO: 实现具体的动作合法性校验逻辑
+
+	// 2. 根据动作更新玩家状态 (Chips, CurrentBet, State)
+	// TODO: 根据 actionType (Fold, Check, Call, Bet, Raise, AllIn) 执行相应的状态修改
+
+	// 3. 更新底池状态 (Pot, CurrentBet, MinRaise)
+	// TODO: 累加下注金额，更新当前下注圈的最高下注额和最小加注额
+
+	// 4. 标记该玩家本轮已行动
+	// TODO: seat.Player.HasActedThisRound = true
+
+	// 5. 广播玩家的动作，用于前端播放动画
+	// TODO: t.messenger.Broadcast(MsgTypeStateUpdate, "player_action", t.BuildPublicSnapshot())
+
+	// 6. 推进状态机
+	t.advanceStateMachine()
 
 	fmt.Printf("TODO: processPlayerAction - 玩家 %s 执行了 %s %d\n", playerID, action, amount)
 	return nil

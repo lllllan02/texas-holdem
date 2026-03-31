@@ -87,12 +87,16 @@ type ActionDetails struct {
 // ============================================================================
 
 // ClientActionPayload 客户端发给服务端的操作指令载荷
-// 对应 core.Message 中的 Payload 字段
+// 对应 core.Message 中的 Payload 字段 (当 MsgType 为 texas.action 时)
 type ClientActionPayload struct {
-	Action     string `json:"action"`                // 玩家执行的动作 (此处包含游戏外动作如 "sit_down", "ready"，以及游戏内动作如 "fold", "call")
-	Amount     int    `json:"amount,omitempty"`      // 涉及的金额 (仅在 bet, raise 时有效)
-	SeatNumber int    `json:"seat_number,omitempty"` // 目标座位号 (仅在 sit_down 时有效)
-	BuyIn      int    `json:"buy_in,omitempty"`      // 带入的筹码量 (仅在 sit_down 时有效)
+	Action string `json:"action"`           // 玩家执行的动作 (如 "fold", "call", "bet", "raise", "allin")
+	Amount int    `json:"amount,omitempty"` // 涉及的金额 (仅在 bet, raise 时有效)
+}
+
+// SitDownPayload 客户端请求落座的载荷
+// 对应 core.Message 中的 Payload 字段 (当 MsgType 为 texas.sit_down 时)
+type SitDownPayload struct {
+	SeatNumber int `json:"seat_number"` // 目标座位号
 }
 
 // BuildPublicSnapshot 生成一个对所有人安全的公共快照（所有人的底牌均被隐藏，除非是摊牌阶段）

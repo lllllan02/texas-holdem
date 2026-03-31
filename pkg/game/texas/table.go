@@ -7,6 +7,15 @@ import (
 	"github.com/lllllan02/texas-holdem/pkg/core"
 )
 
+// TableOptions 创建牌桌的配置参数 (用于 JSON 反序列化)
+type TableOptions struct {
+	MaxPlayers    int `json:"max_players"`    // 最大座位数 (通常为 2, 6, 9)
+	SmallBlind    int `json:"small_blind"`    // 小盲注金额
+	BigBlind      int `json:"big_blind"`      // 大盲注金额
+	InitialChips  int `json:"initial_chips"`  // 初始筹码量
+	ActionTimeout int `json:"action_timeout"` // 玩家行动超时时间(秒)
+}
+
 // Table 德州扑克牌桌 (GameEngine 的具体实现)
 // 负责管理跨局的持久化状态，包括座位分配、庄家位置的流转以及对局历史。
 type Table struct {
@@ -51,14 +60,6 @@ func (t *Table) GameType() string {
 
 // OnInit 引擎初始化时调用，注入消息发送器和游戏配置
 func (t *Table) OnInit(messenger core.Messenger, options []byte) error {
-	type TableOptions struct {
-		MaxPlayers    int `json:"max_players"`    // 最大座位数 (通常为 2, 6, 9)
-		SmallBlind    int `json:"small_blind"`    // 小盲注金额
-		BigBlind      int `json:"big_blind"`      // 大盲注金额
-		InitialChips  int `json:"initial_chips"`  // 初始筹码量
-		ActionTimeout int `json:"action_timeout"` // 玩家行动超时时间(秒)
-	}
-
 	t.messenger = messenger
 
 	// 1. 解析配置
@@ -223,7 +224,12 @@ func (t *Table) HandleMessage(userID string, msgType string, payload []byte) err
 // ============================================================================
 
 func (t *Table) handleSitDown(userID string, payload []byte) error {
-	// TODO: 1. 解析 payload 获取目标座位号 (SeatNumber)
+	// 1. 解析 payload 获取目标座位号 (SeatNumber)
+	var sitPayload SitDownPayload
+	if err := json.Unmarshal(payload, &sitPayload); err != nil {
+		return fmt.Errorf("invalid sit_down payload: %w", err)
+	}
+
 	// TODO: 2. 校验座位是否合法且为空
 	// TODO: 3. 检查玩家是否已经在其他座位上。如果是，则执行“换座”逻辑：先清空原座位，再绑定到新座位。
 	// TODO: 4. 从 t.Players 中查找该玩家，如果不存在则创建新 Player 并分配初始筹码，记录到 t.Players 中；如果存在则直接复用（恢复筹码和 RebuyCount）
@@ -258,9 +264,39 @@ func (t *Table) handleCancelReady(userID string) error {
 }
 
 func (t *Table) handleAction(userID string, payload []byte) error {
-	// TODO: 1. 解析 payload 获取具体的打牌动作 (ActionType) 和金额 (Amount)
-	// TODO: 2. 调用 t.processPlayerAction(userID, actionType, amount)
-	return nil
+	// 1. 解析 payload 获取具体的打牌动作
+	var actionPayload ClientActionPayload
+	if err := json.Unmarshal(payload, &actionPayload); err != nil {
+		return fmt.Errorf("invalid action payload: %w", err)
+	}
+
+	actionType := ActionType(actionPayload.Action)
+	amount := actionPayload.Amount
+
+	// 2. 基础校验：动作类型是否合法
+	switch actionType {
+	case ActionTypeFold, ActionTypeCheck, ActionTypeCall, ActionTypeBet, ActionTypeRaise, ActionTypeAllIn:
+		// 合法动作
+	default:
+		return fmt.Errorf("unknown action type: %s", actionType)
+	}
+
+	// 3. 基础校验：玩家是否在座位上且参与了本局
+	seat := t.getSeatByUserID(userID)
+	if seat == nil || seat.Player == nil {
+		return fmt.Errorf("player not in seat")
+	}
+	if seat.Player.State == PlayerStateWaiting {
+		return fmt.Errorf("player is not active in current hand")
+	}
+
+	// 4. 基础校验：是否轮到该玩家行动
+	if t.CurrentHand.CurrentPlayerIndex != seat.SeatNumber {
+		return fmt.Errorf("not your turn")
+	}
+
+	// 5. 将具体的业务逻辑交给状态机处理
+	return t.processPlayerAction(userID, actionType, amount)
 }
 
 // getSeatByUserID 根据 UserID 查找玩家所在的座位
