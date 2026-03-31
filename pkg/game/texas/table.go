@@ -3,11 +3,13 @@ package texas
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/lllllan02/texas-holdem/pkg/core"
+	"github.com/lllllan02/texas-holdem/pkg/user"
+	"github.com/lllllan02/texas-holdem/pkg/utils"
 )
 
-// TableOptions 创建牌桌的配置参数 (用于 JSON 反序列化)
 type TableOptions struct {
 	MaxPlayers    int `json:"max_players"`    // 最大座位数 (通常为 2, 6, 9)
 	SmallBlind    int `json:"small_blind"`    // 小盲注金额
@@ -37,16 +39,24 @@ type Table struct {
 	CurrentHand *Hand              // 当前正在进行的单局游戏实例（如果不在游戏中则为 nil）
 	Histories   []*ShowdownSummary // 历史对局记录列表，用于战绩回放
 	IsPaused    bool               // 游戏是否处于暂停状态
+
+	// --- 定时器 ---
+	countdownTimer *utils.PausableTimer // 开局倒计时定时器
+	actionTimer    *utils.PausableTimer // 玩家行动倒计时定时器
+	showdownTimer  *utils.PausableTimer // 动画缓冲定时器（用于摊牌结算、提前结束、All-in快进等场景，给前端留出播放动画的时间）
 }
 
 // NewTable 创建一个新的德州扑克牌桌实例
 // 注意：此时不解析业务配置，只做最基础的内存结构初始化
 func NewTable() *Table {
 	return &Table{
-		Players:    make(map[string]*Player),
-		ButtonSeat: -1, // 游戏未开始时没有庄家，用 -1 表示
-		HandCount:  0,
-		Histories:  make([]*ShowdownSummary, 0),
+		Players:        make(map[string]*Player),
+		ButtonSeat:     -1, // 游戏未开始时没有庄家，用 -1 表示
+		HandCount:      0,
+		Histories:      make([]*ShowdownSummary, 0),
+		countdownTimer: utils.NewPausableTimer(),
+		actionTimer:    utils.NewPausableTimer(),
+		showdownTimer:  utils.NewPausableTimer(),
 	}
 }
 
@@ -99,7 +109,6 @@ func (t *Table) OnInit(messenger core.Messenger, options []byte) error {
 	for i := 0; i < t.MaxPlayers; i++ {
 		t.Seats[i] = &Seat{
 			SeatNumber: i,
-			State:      SeatEmpty,
 			Player:     nil,
 		}
 	}
@@ -109,45 +118,60 @@ func (t *Table) OnInit(messenger core.Messenger, options []byte) error {
 
 // OnDestroy 引擎被销毁时调用，用于清理资源
 func (t *Table) OnDestroy() {
-	// TODO: 停止当前可能正在运行的倒计时定时器 (Action Timer)
-	// TODO: 停止可能正在运行的延迟结算定时器 (Showdown Timer)
+	t.countdownTimer.Stop()
+	t.actionTimer.Stop()
+	t.showdownTimer.Stop()
 }
 
 // OnPlayerJoin 玩家加入游戏时调用
 // 注意：这只是建立连接进入房间，并不代表落座。玩家默认是旁观者。
-func (t *Table) OnPlayerJoin(userID string) {
-	// 1. 检查该玩家是否之前在座位上（断线重连）
-	if seat := t.getSeatByUserID(userID); seat != nil {
-		// 恢复在线状态
-		seat.Player.IsOffline = false
-		// 广播状态更新，通知其他人该玩家已重连
-		t.messenger.Broadcast(MsgTypeStateUpdate, "player_reconnected", t.BuildPublicSnapshot())
+func (t *Table) OnPlayerJoin(u *user.User) {
+	// 1. 将玩家信息保存或更新到 Players 映射中
+	player, exists := t.Players[u.ID]
+	if !exists {
+		// 第一次进入房间，创建玩家实体并分配初始筹码
+		player = &Player{
+			User:       u,
+			State:      PlayerStateWaiting,
+			Chips:      t.InitialChips, // 进入房间即分配筹码，未落座对其他人不可见
+			BuyInCount: 1,              // 初始带入算作第 1 次买入
+		}
+		t.Players[u.ID] = player
+	} else {
+		// 玩家之前就在房间里，更新用户信息（可能改了名字或头像）
+		player.User = u
 	}
 
-	// 2. 发送当前的全局快照给该玩家，以便前端恢复画面
-	snap := t.BuildPersonalSnapshot(userID)
-	t.messenger.SendTo(userID, MsgTypeStateUpdate, "player_joined", snap)
+	// 2. 如果该玩家之前已经落座（断线重连），恢复其在线状态并广播
+	if player.IsOffline {
+		player.IsOffline = false
+		// 只有当玩家在座位上时，才需要向其他人广播其重连状态（旁观者重连不需要广播）
+		if t.getSeatByUserID(u.ID) != nil {
+			t.messenger.Broadcast(MsgTypeStateUpdate, "player_reconnected", t.BuildPublicSnapshot())
+		}
+	}
+
+	// 3. 发送当前的全局快照给该玩家，以便前端恢复画面
+	snap := t.BuildPersonalSnapshot(u.ID)
+	t.messenger.SendTo(u.ID, MsgTypeStateUpdate, "player_joined", snap)
 }
 
 // OnPlayerLeave 玩家离开游戏/掉线时调用
 func (t *Table) OnPlayerLeave(userID string) {
-	// 1. 查找该玩家是否在座位上
-	seat := t.getSeatByUserID(userID)
-
-	// 如果只是旁观者离开，不需要处理
-	if seat == nil {
+	// 1. 从 Players 映射中找到该玩家
+	player, exists := t.Players[userID]
+	if !exists {
 		return
 	}
 
-	// 2. 如果玩家在座位上，处理断线逻辑
-	// 注意：如果游戏正在进行中，我们不需要在这里做任何特殊处理（比如自动 Fold）。
-	// 因为轮到他行动时，系统自然会挂起一个倒计时，倒计时结束他没操作，状态机也会自动帮他 Check/Fold。
-	// 无论游戏是否开始，我们都只将他标记为“已断线/托管”，保留他的座位和筹码。
-	// 真正的清座逻辑（踢人）应该由另一个专门的定时器或房主手动触发。
-	seat.Player.IsOffline = true
+	// 2. 标记为断线状态
+	player.IsOffline = true
 
-	// 3. 广播玩家离开的消息
-	t.messenger.Broadcast(MsgTypeStateUpdate, "player_left", t.BuildPublicSnapshot())
+	// 3. 如果该玩家在座位上，广播其离开（断线）的消息
+	// 旁观者离开不需要广播，以免打扰正在打牌的人
+	if t.getSeatByUserID(userID) != nil {
+		t.messenger.Broadcast(MsgTypeStateUpdate, "player_left", t.BuildPublicSnapshot())
+	}
 }
 
 // Pause 暂停游戏引擎（通常由房主触发）
@@ -159,7 +183,15 @@ func (t *Table) Pause() error {
 	}
 
 	t.IsPaused = true
-	// TODO: 如果有正在运行的倒计时（如玩家思考时间），需要将其挂起/冻结
+
+	// 挂起玩家思考倒计时
+	t.actionTimer.Pause()
+
+	// 挂起开局倒计时
+	t.countdownTimer.Stop()
+
+	// 注意：showdownTimer（动画缓冲）通常不需要挂起，因为它是为了给前端播动画，
+	// 暂停游戏不应该打断正在播放的结算动画。让它自然执行完毕进入 Waiting 状态即可。
 
 	return nil
 }
@@ -173,7 +205,31 @@ func (t *Table) Resume() error {
 	}
 
 	t.IsPaused = false
-	// TODO: 恢复之前被挂起的倒计时
+
+	// 恢复玩家思考倒计时
+	if rem := t.actionTimer.Resume(); rem > 0 {
+		// 定时器已成功在底层恢复，我们只需要通知前端更新 UI
+		if t.CurrentHand != nil && t.CurrentHand.CurrentPlayerIndex != -1 {
+			seat := t.Seats[t.CurrentHand.CurrentPlayerIndex]
+			if seat.Player != nil {
+				currentPlayerID := seat.Player.User.ID
+				
+				// 1. 广播倒计时恢复，让所有人的进度条继续走
+				t.messenger.Broadcast(MsgTypeCountdown, "resume_action_timer", CountdownPayload{
+					PlayerID: currentPlayerID,
+					Seconds:  int(rem.Seconds()),
+				})
+				
+				// 2. 重新向该玩家发送行动通知，以便前端重新渲染操作面板
+				t.notifyCurrentPlayer(int(rem.Seconds()))
+			}
+		}
+	}
+
+	// 如果没有在游戏中，尝试重新触发开局检查
+	if t.CurrentHand == nil {
+		t.checkAndAutoStart()
+	}
 
 	return nil
 }
@@ -230,36 +286,101 @@ func (t *Table) handleSitDown(userID string, payload []byte) error {
 		return fmt.Errorf("invalid sit_down payload: %w", err)
 	}
 
-	// TODO: 2. 校验座位是否合法且为空
-	// TODO: 3. 检查玩家是否已经在其他座位上。如果是，则执行“换座”逻辑：先清空原座位，再绑定到新座位。
-	// TODO: 4. 从 t.Players 中查找该玩家，如果不存在则创建新 Player 并分配初始筹码，记录到 t.Players 中；如果存在则直接复用（恢复筹码和 RebuyCount）
-	// TODO: 5. 将 Player 实体绑定到 Seat
-	// TODO: 6. 广播状态更新 (MsgTypeStateUpdate)
+	// 2. 校验座位是否合法且为空
+	if sitPayload.SeatNumber < 0 || sitPayload.SeatNumber >= t.MaxPlayers {
+		return fmt.Errorf("invalid seat number")
+	}
+	targetSeat := t.Seats[sitPayload.SeatNumber]
+	if targetSeat.Player != nil {
+		return fmt.Errorf("seat is already occupied")
+	}
+
+	// 3. 检查玩家是否已经在其他座位上。如果是，则执行“换座”逻辑：先清空原座位，再绑定到新座位。
+	oldSeat := t.getSeatByUserID(userID)
+	if oldSeat != nil {
+		oldSeat.Player = nil
+	}
+
+	// 4. 从 t.Players 中查找该玩家，如果不存在则返回错误（理论上 OnPlayerJoin 已经创建了）
+	player, exists := t.Players[userID]
+	if !exists {
+		return fmt.Errorf("player not found in room")
+	}
+
+	// 如果玩家筹码为0（比如之前破产了），重新分配初始筹码
+	if player.Chips == 0 {
+		player.Chips = t.InitialChips
+		player.BuyInCount++
+	}
+	player.State = PlayerStateWaiting
+
+	// 5. 将 Player 实体绑定到 Seat
+	targetSeat.Player = player
+
+	// 6. 广播状态更新 (MsgTypeStateUpdate)
+	t.messenger.Broadcast(MsgTypeStateUpdate, "sit_down", t.BuildPublicSnapshot())
 	return nil
 }
 
 func (t *Table) handleStandUp(userID string) error {
-	// TODO: 1. 查找玩家所在座位
-	// TODO: 2. 游戏未开始，直接清空座位 (Seat.Player = nil, Seat.State = SeatEmpty)
-	// TODO: 3. 重置玩家状态 (Player.State = PlayerStateWaiting)
-	// TODO: 4. 如果当前正在进行开局倒计时 (Countdown)，必须打断/取消倒计时！
-	// TODO: 5. 广播状态更新 (MsgTypeStateUpdate)
+	// 1. 查找玩家所在座位
+	seat := t.getSeatByUserID(userID)
+	if seat == nil {
+		return fmt.Errorf("player not in seat")
+	}
+
+	// 2. 游戏未开始，直接清空座位 (Seat.Player = nil)
+	// 3. 重置玩家状态 (Player.State = PlayerStateWaiting)
+	seat.Player.State = PlayerStateWaiting
+	seat.Player = nil
+
+	// 4. 如果当前正在进行开局倒计时 (Countdown)，必须打断/取消倒计时！
+	if t.countdownTimer != nil {
+		t.countdownTimer.Stop()
+		t.messenger.Broadcast(MsgTypeCountdown, "cancel_countdown", CountdownPayload{Seconds: 0})
+	}
+
+	// 5. 广播状态更新 (MsgTypeStateUpdate)
+	t.messenger.Broadcast(MsgTypeStateUpdate, "stand_up", t.BuildPublicSnapshot())
 	return nil
 }
 
 func (t *Table) handleReady(userID string) error {
-	// TODO: 1. 查找玩家所在座位
-	// TODO: 2. 修改玩家状态为 PlayerStateReady
-	// TODO: 3. 广播状态更新 (MsgTypeStateUpdate)
-	// TODO: 4. 调用 t.checkAndAutoStart() 检查是否满足开局条件
+	// 1. 查找玩家所在座位
+	seat := t.getSeatByUserID(userID)
+	if seat == nil {
+		return fmt.Errorf("player not in seat")
+	}
+
+	// 2. 修改玩家状态为 PlayerStateReady
+	seat.Player.State = PlayerStateReady
+
+	// 3. 广播状态更新 (MsgTypeStateUpdate)
+	t.messenger.Broadcast(MsgTypeStateUpdate, "ready", t.BuildPublicSnapshot())
+
+	// 4. 调用 t.checkAndAutoStart() 检查是否满足开局条件
+	t.checkAndAutoStart()
 	return nil
 }
 
 func (t *Table) handleCancelReady(userID string) error {
-	// TODO: 1. 查找玩家所在座位
-	// TODO: 2. 修改玩家状态为 PlayerStateWaiting
-	// TODO: 3. 如果当前正在进行开局倒计时 (Countdown)，必须打断/取消倒计时！
-	// TODO: 4. 广播状态更新 (MsgTypeStateUpdate)
+	// 1. 查找玩家所在座位
+	seat := t.getSeatByUserID(userID)
+	if seat == nil {
+		return fmt.Errorf("player not in seat")
+	}
+
+	// 2. 修改玩家状态为 PlayerStateWaiting
+	seat.Player.State = PlayerStateWaiting
+
+	// 3. 如果当前正在进行开局倒计时 (Countdown)，必须打断/取消倒计时！
+	if t.countdownTimer != nil {
+		t.countdownTimer.Stop()
+		t.messenger.Broadcast(MsgTypeCountdown, "cancel_countdown", CountdownPayload{Seconds: 0})
+	}
+
+	// 4. 广播状态更新 (MsgTypeStateUpdate)
+	t.messenger.Broadcast(MsgTypeStateUpdate, "cancel_ready", t.BuildPublicSnapshot())
 	return nil
 }
 
@@ -302,8 +423,11 @@ func (t *Table) handleAction(userID string, payload []byte) error {
 // getSeatByUserID 根据 UserID 查找玩家所在的座位
 // 如果玩家不在座位上（比如是旁观者），返回 nil
 func (t *Table) getSeatByUserID(userID string) *Seat {
+	// 虽然 t.Players 可以快速找到 Player，但 Player 结构体中并没有记录 SeatNumber。
+	// 因此要判断玩家是否在座位上，仍然需要遍历 t.Seats。
+	// 由于 MaxPlayers 通常很小 (2~9)，这里的遍历开销可以忽略不计。
 	for _, s := range t.Seats {
-		if s.State == SeatOccupied && s.Player != nil && s.Player.User.ID == userID {
+		if s.Player != nil && s.Player.User.ID == userID {
 			return s
 		}
 	}
@@ -320,7 +444,7 @@ func (t *Table) checkAndAutoStart() {
 	// 2. 检查是否满员，且所有人在座玩家都已准备
 	readyCount := 0
 	for _, seat := range t.Seats {
-		if seat.State == SeatEmpty || seat.Player == nil {
+		if seat.Player == nil {
 			return // 未满员，不开始
 		}
 		if seat.Player.State != PlayerStateReady {
@@ -335,6 +459,11 @@ func (t *Table) checkAndAutoStart() {
 	}
 
 	// 4. 所有条件满足，自动触发发牌流程
-	// TODO: 可以在这里加一个 3 秒的倒计时 (需保存 Timer 引用以便在玩家取消准备/站起时打断)，然后再 startNewHand()
-	t.startNewHand()
+	// 启动 3 秒倒计时
+	t.countdownTimer.Start(3*time.Second, func() {
+		// 倒计时结束后，再次检查条件是否仍然满足
+		t.startNewHand()
+	})
+	
+	t.messenger.Broadcast(MsgTypeCountdown, "start_countdown", CountdownPayload{Seconds: 3})
 }

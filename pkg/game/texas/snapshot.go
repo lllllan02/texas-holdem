@@ -47,7 +47,7 @@ type PlayerSnapshot struct {
 	State             PlayerState  `json:"state"`                // 玩家状态 (如 waiting, active, folded, allin)
 	HasActedThisRound bool         `json:"has_acted_this_round"` // 玩家在本轮是否已经行动过
 	IsOffline         bool         `json:"is_offline"`           // 玩家是否处于断线/托管状态
-	RebuyCount        int          `json:"rebuy_count"`          // 玩家补充筹码的次数
+	BuyInCount        int          `json:"buy_in_count"`         // 玩家买入/分配筹码的总次数
 	HoleCards         []Card       `json:"hole_cards"`           // 玩家底牌（注意：如果是其他玩家且未摊牌，此字段必须为 nil）
 }
 
@@ -80,6 +80,12 @@ type ActionDetails struct {
 	MinRaise    int `json:"min_raise,omitempty"`    // 最小加注额 (当前下注额 + 最小加注幅度)
 	MaxRaise    int `json:"max_raise,omitempty"`    // 最大加注额 (玩家总筹码)
 	AllinAmount int `json:"allin_amount,omitempty"` // All-in 对应的总金额 (玩家当前所有筹码)
+}
+
+// CountdownPayload 倒计时通知载荷
+type CountdownPayload struct {
+	PlayerID string `json:"player_id,omitempty"` // 正在行动的玩家 ID（如果是开局倒计时，此字段为空）
+	Seconds  int    `json:"seconds"`             // 剩余秒数
 }
 
 // ============================================================================
@@ -141,7 +147,7 @@ func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 	playerPosMap := t.getPlayerPositions()
 
 	for _, seat := range t.Seats {
-		if seat.State == SeatEmpty || seat.Player == nil {
+		if seat.Player == nil {
 			continue
 		}
 
@@ -157,7 +163,7 @@ func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 			State:             p.State,
 			HasActedThisRound: p.HasActedThisRound,
 			IsOffline:         p.IsOffline,
-			RebuyCount:        p.RebuyCount,
+			BuyInCount:        p.BuyInCount,
 		}
 
 		// 【核心安全逻辑】：千人千面，只发该看的底牌
@@ -196,7 +202,7 @@ func (t *Table) getPlayerPositions() map[string]PositionType {
 		seatIdx := (startSeat + i) % t.MaxPlayers
 		seat := t.Seats[seatIdx]
 
-		if seat.State == SeatOccupied && seat.Player != nil && seat.Player.State != PlayerStateWaiting {
+		if seat.Player != nil && seat.Player.State != PlayerStateWaiting {
 			activePlayers = append(activePlayers, seat.Player)
 		}
 	}

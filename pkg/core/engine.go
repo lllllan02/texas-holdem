@@ -1,5 +1,7 @@
 package core
 
+import "github.com/lllllan02/texas-holdem/pkg/user"
+
 // GameEngine 游戏引擎接口
 // 这是游戏逻辑层 (Engine) 与网络/房间管理层 (Handler) 之间通信的通用协议。
 // 任何想要接入系统的游戏（如德扑、UNO）都需要实现此接口，以便由 Handler 进行生命周期管理和消息分发。
@@ -17,7 +19,8 @@ type GameEngine interface {
 	OnDestroy()
 
 	// OnPlayerJoin 玩家加入游戏时调用（物理连接建立或进入游戏场景）
-	OnPlayerJoin(userID string)
+	// user 包含玩家的基础信息
+	OnPlayerJoin(user *user.User)
 
 	// OnPlayerLeave 玩家离开游戏/掉线时调用（物理连接断开或退出游戏场景）
 	OnPlayerLeave(userID string)

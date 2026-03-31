@@ -13,5 +13,5 @@ type Player struct {
 	HoleCards         []Card      // 玩家的底牌（通常为 2 张）
 	HasActedThisRound bool        // 在当前下注圈是否已经表态过
 	IsOffline         bool        // 是否已断线（断线不代表离开座位，只是进入托管状态）
-	RebuyCount        int         // 玩家破产后自动补充筹码的次数
+	BuyInCount        int         // 玩家买入/分配筹码的总次数（初始带入算第1次，破产重买算第2次...）
 }
