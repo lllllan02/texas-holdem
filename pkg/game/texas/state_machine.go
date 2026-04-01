@@ -2,7 +2,6 @@ package texas
 
 import (
 	"fmt"
-	"math/rand"
 	"time"
 )
 
@@ -537,21 +536,20 @@ func (t *Table) handleShowdown() {
 
 	// 2. 评估所有未弃牌玩家的牌型大小
 	allHands := make([]HandInfo, 0)
-	playerRanks := make(map[string]HandRank)
+	playerRanks := make(map[string]*HandResult)
 
 	for _, p := range t.Seats {
 		if p != nil {
 
 			if p.State != PlayerStateFolded && p.State != PlayerStateWaiting {
-				// TODO: 真正的牌型评估逻辑 (7选5)
-				// 暂时用随机数模拟
-				rank := HandRank(rand.Intn(10))
-				playerRanks[p.User.ID] = rank
+				// 真正的牌型评估逻辑 (7选5)
+				p.EvaluateHand(t.CurrentHand.BoardCards)
+				playerRanks[p.User.ID] = p.BestHand
 
 				allHands = append(allHands, HandInfo{
 					PlayerID: p.User.ID,
 					Cards:    p.HoleCards,
-					HandRank: rank,
+					HandRank: p.BestHand.Rank,
 				})
 			}
 		}
@@ -564,24 +562,34 @@ func (t *Table) handleShowdown() {
 		}
 
 		// 找出这个奖池中牌型最大的玩家
-		var maxRank HandRank = -1
+		var bestResult *HandResult
 		var winners []string
 
 		for _, pid := range pot.Players {
-			rank, ok := playerRanks[pid]
+			res, ok := playerRanks[pid]
 			if !ok {
 				continue
 			}
-			if rank > maxRank {
-				maxRank = rank
+			
+			if bestResult == nil {
+				bestResult = res
 				winners = []string{pid}
-			} else if rank == maxRank {
+				continue
+			}
+
+			cmp := Compare(*res, *bestResult)
+			if cmp > 0 {
+				bestResult = res
+				winners = []string{pid}
+			} else if cmp == 0 {
 				winners = append(winners, pid)
 			}
 		}
 
 		pot.Winners = winners
-		pot.HandRank = maxRank
+		if bestResult != nil {
+			pot.HandRank = bestResult.Rank
+		}
 
 		// 平分奖池
 		if len(winners) > 0 {

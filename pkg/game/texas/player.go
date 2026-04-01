@@ -14,6 +14,7 @@ type Player struct {
 	HasActedThisRound bool        // 在当前下注圈是否已经表态过
 	IsOffline         bool        // 是否已断线（断线不代表离开座位，只是进入托管状态）
 	BuyInCount        int         // 玩家买入/分配筹码的总次数（初始带入算第1次，破产重买算第2次...）
+	BestHand          *HandResult // 缓存的最佳牌型（在 Showdown 阶段计算并缓存）
 }
 
 // NewPlayer 创建一个新的玩家实体
@@ -27,6 +28,7 @@ func NewPlayer(u *user.User, initialChips int) *Player {
 		HasActedThisRound: false,
 		IsOffline:         false,
 		BuyInCount:        1, // 初始带入算作第 1 次买入
+		BestHand:          nil,
 	}
 }
 
@@ -45,4 +47,22 @@ func (p *Player) PlaceBet(amount int) int {
 		p.State = PlayerStateAllIn
 	}
 	return actual
+}
+
+// EvaluateHand 计算并缓存玩家结合公共牌后的最佳牌型
+// 结果保存在结构体的 BestHand 字段中，避免多次比牌时重复计算
+func (p *Player) EvaluateHand(publicCards []Card) {
+	// 如果已经计算过，直接返回
+	if p.BestHand != nil {
+		return
+	}
+
+	// 合并手牌 (2张) 和公共牌 (5张)
+	allCards := make([]Card, 0, len(p.HoleCards)+len(publicCards))
+	allCards = append(allCards, p.HoleCards...)
+	allCards = append(allCards, publicCards...)
+
+	// 找出 7 选 5 的最佳牌型
+	res := Evaluate(allCards)
+	p.BestHand = &res
 }
