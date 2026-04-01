@@ -306,9 +306,7 @@ func (t *Table) HandleMessage(userID string, msgType string, payload []byte) err
 	}
 }
 
-// ============================================================================
 // 动作处理逻辑骨架 (Action Handlers)
-// ============================================================================
 
 func (t *Table) handleSitDown(userID string, payload []byte) error {
 	// 1. 解析 payload 获取目标座位号 (SeatNumber)

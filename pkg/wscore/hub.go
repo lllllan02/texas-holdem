@@ -123,6 +123,22 @@ func (h *Hub) Run() {
 	}
 }
 
+// Register 将客户端注册到 Hub
+func (h *Hub) Register(client *Client) {
+	select {
+	case h.register <- client:
+	case <-h.destroyCh:
+	}
+}
+
+// Unregister 将客户端从 Hub 注销
+func (h *Hub) Unregister(client *Client) {
+	select {
+	case h.unregister <- client:
+	case <-h.destroyCh:
+	}
+}
+
 // BroadcastMessage 向 Hub 中的所有客户端广播消息
 func (h *Hub) BroadcastMessage(message []byte) {
 	select {

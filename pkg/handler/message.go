@@ -2,9 +2,7 @@ package handler
 
 import "github.com/lllllan02/texas-holdem/pkg/user"
 
-// ============================================================================
 // 房间级消息类型 (Room MsgType)
-// ============================================================================
 const (
 	MsgTypePauseGame  = "room.pause"   // 房主暂停游戏
 	MsgTypeResumeGame = "room.resume"  // 房主恢复游戏
@@ -12,9 +10,7 @@ const (
 	MsgTypeGamePaused = "room.paused"  // 游戏已暂停
 )
 
-// ============================================================================
 // 房间级消息 Payload 结构体
-// ============================================================================
 
 // WelcomePayload 欢迎加入房间的消息体
 type WelcomePayload struct {
