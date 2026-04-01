@@ -41,7 +41,7 @@ type PlayerSnapshot struct {
 	Name              string       `json:"name"`                 // 玩家昵称
 	Avatar            string       `json:"avatar"`               // 玩家头像
 	Position          PositionType `json:"position,omitempty"`   // 玩家位置 (如 "SB", "BB", "UTG"，未开局时可为空)
-	SeatNumber        int          `json:"seat_number"`          // 座位号 (0 ~ MaxPlayers-1)
+	SeatNumber        int          `json:"seat_number"`          // 座位号 (0 ~ len(Seats)-1)
 	Chips             int          `json:"chips"`                // 玩家当前持有的筹码量
 	CurrentBet        int          `json:"current_bet"`          // 玩家在本轮已下注的金额
 	State             PlayerState  `json:"state"`                // 玩家状态 (如 waiting, active, folded, allin)
@@ -120,7 +120,7 @@ func (t *Table) BuildPersonalSnapshot(viewerID string) StateUpdateSnapshot {
 // buildSnapshotBase 是内部基础构建逻辑
 func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 	snap := StateUpdateSnapshot{
-		HandCount:  t.HandCount,
+		HandCount:  len(t.Histories),
 		ButtonSeat: t.ButtonSeat,
 		IsPaused:   t.IsPaused,
 		Players:    make([]PlayerSnapshot, 0),
@@ -146,18 +146,17 @@ func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 	// 获取所有活跃玩家的位置映射 (Key: UserID, Value: PositionType)
 	playerPosMap := t.getPlayerPositions()
 
-	for _, seat := range t.Seats {
-		if seat.Player == nil {
+	for seatIdx, p := range t.Seats {
+		if p == nil {
 			continue
 		}
 
-		p := seat.Player
 		pSnap := PlayerSnapshot{
 			ID:                p.User.ID,
 			Name:              p.User.Nickname,
 			Avatar:            p.User.Avatar,
 			Position:          playerPosMap[p.User.ID], // 从 map 中获取计算好的位置
-			SeatNumber:        seat.SeatNumber,
+			SeatNumber:        seatIdx,
 			Chips:             p.Chips,
 			CurrentBet:        p.CurrentBet,
 			State:             p.State,
@@ -195,15 +194,15 @@ func (t *Table) getPlayerPositions() map[string]PositionType {
 	}
 
 	// 1. 从庄家的下一个座位开始，顺时针收集所有参与本局游戏的活跃玩家
-	activePlayers := make([]*Player, 0, t.MaxPlayers)
+	activePlayers := make([]*Player, 0, len(t.Seats))
 	startSeat := t.ButtonSeat + 1
 
-	for i := 0; i < t.MaxPlayers; i++ {
-		seatIdx := (startSeat + i) % t.MaxPlayers
-		seat := t.Seats[seatIdx]
+	for i := 0; i < len(t.Seats); i++ {
+		seatIdx := (startSeat + i) % len(t.Seats)
+		p := t.Seats[seatIdx]
 
-		if seat.Player != nil && seat.Player.State != PlayerStateWaiting {
-			activePlayers = append(activePlayers, seat.Player)
+		if p != nil && p.State != PlayerStateWaiting {
+			activePlayers = append(activePlayers, p)
 		}
 	}
 

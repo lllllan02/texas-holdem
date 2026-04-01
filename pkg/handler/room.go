@@ -29,6 +29,11 @@ func (r *Room) SendTo(userID string, msgType string, reason string, payload any)
 	// TODO: 实现私发逻辑，通过 wscore 找到特定用户的连接并发送
 }
 
+// Execute 提交异步任务到 Hub 的主循环中执行
+func (r *Room) Execute(task func()) {
+	// TODO: r.hub.Execute(task)
+}
+
 // ============================================================================
 // 房间级消息类型 (Room MsgType)
 // ============================================================================

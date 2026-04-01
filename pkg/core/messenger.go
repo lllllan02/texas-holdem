@@ -7,4 +7,7 @@ type Messenger interface {
 
 	// SendTo 私发给游戏内的特定玩家
 	SendTo(userID string, msgType string, reason string, payload any)
+
+	// Execute 提交一个异步任务到主循环中执行，保证状态修改的并发安全
+	Execute(task func())
 }

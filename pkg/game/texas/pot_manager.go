@@ -20,9 +20,9 @@ func (t *Table) calculateSidePots() {
 
 	// 1. 收集所有玩家本轮的下注
 	var bets []PlayerBet
-	for _, seat := range t.Seats {
-		if seat.Player != nil {
-			p := seat.Player
+	for _, p := range t.Seats {
+		if p != nil {
+
 			if p.CurrentBet > 0 {
 				bets = append(bets, PlayerBet{
 					PlayerID: p.User.ID,
@@ -54,8 +54,8 @@ func (t *Table) calculateSidePots() {
 		var eligiblePlayers []string
 		for _, b := range bets {
 			// 只有未弃牌的玩家才有资格竞争
-			seat := t.getSeatByUserID(b.PlayerID)
-			if seat != nil && seat.Player.State != PlayerStateFolded {
+			seatIdx := t.getSeatIndexByUserID(b.PlayerID)
+			if seatIdx != -1 && t.Seats[seatIdx].State != PlayerStateFolded {
 				eligiblePlayers = append(eligiblePlayers, b.PlayerID)
 			}
 		}
@@ -101,9 +101,9 @@ func (t *Table) calculateSidePots() {
 	}
 
 	// 4. 重置玩家的 CurrentBet
-	for _, seat := range t.Seats {
-		if seat.Player != nil {
-			seat.Player.CurrentBet = 0
+	for _, p := range t.Seats {
+		if p != nil {
+			p.CurrentBet = 0
 		}
 	}
 }

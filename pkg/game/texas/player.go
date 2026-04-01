@@ -15,3 +15,17 @@ type Player struct {
 	IsOffline         bool        // 是否已断线（断线不代表离开座位，只是进入托管状态）
 	BuyInCount        int         // 玩家买入/分配筹码的总次数（初始带入算第1次，破产重买算第2次...）
 }
+
+// NewPlayer 创建一个新的玩家实体
+func NewPlayer(u *user.User, initialChips int) *Player {
+	return &Player{
+		User:              u,
+		State:             PlayerStateWaiting,
+		Chips:             initialChips,
+		CurrentBet:        0,
+		HoleCards:         nil,
+		HasActedThisRound: false,
+		IsOffline:         false,
+		BuyInCount:        1, // 初始带入算作第 1 次买入
+	}
+}
