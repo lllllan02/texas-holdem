@@ -12,44 +12,18 @@ import (
 
 // startNewHand 开始新的一局游戏
 func (t *Table) startNewHand() error {
-	// 1. 获取所有准备好的玩家，分配位置 (BTN, SB, BB 等)
-	activeSeats := make([]int, 0)
-	for seatIdx, p := range t.Seats {
-		if p != nil && p.State == PlayerStateReady {
-			activeSeats = append(activeSeats, seatIdx)
-			// 将玩家状态改为 Active
-			p.State = PlayerStateActive
-			p.CurrentBet = 0
-			p.HasActedThisRound = false
-			p.HoleCards = nil
-		}
+	// 1. 从庄家下一席起顺时针扫一整圈，收集本局所有 Ready 的玩家，并直接重置其本局状态。
+	//    activeSeats[0] 即为新庄家（上一局 Button 的下一顺时针、仍在桌上的第一个选手）。
+	//    ButtonSeat 为 -1 时等价于从 0 号位开始找第一个 Ready。
+	n := len(t.Seats)
+	if n < 2 {
+		return fmt.Errorf("not enough seats to start a hand")
 	}
 
-	if len(activeSeats) < 2 {
-		return fmt.Errorf("not enough players to start a hand")
-	}
-
-	// 确定庄家 (ButtonSeat)
-	if t.ButtonSeat == -1 {
-		// 第一局，随机选一个庄家
-		t.ButtonSeat = activeSeats[rand.Intn(len(activeSeats))]
-	} else {
-		// 顺时针找下一个有人的座位
-		found := false
-		for i := 1; i <= len(t.Seats); i++ {
-			nextSeat := (t.ButtonSeat + i) % len(t.Seats)
-			for _, s := range activeSeats {
-				if s == nextSeat {
-					t.ButtonSeat = nextSeat
-					found = true
-					break
-				}
-			}
-			if found {
-				break
-			}
-		}
-	}
+	// 1. 推进庄家 (ButtonSeat)
+	// 当前开局要求是严格满员，所以直接顺时针移动一位即可
+	// 如果是第一局 (ButtonSeat == -1)，则 (-1 + 1) % n = 0，即 0 号位为庄家
+	t.ButtonSeat = (t.ButtonSeat + 1) % n
 
 	// 2. 初始化 Hand 结构体
 	t.CurrentHand = &Hand{
@@ -59,90 +33,76 @@ func (t *Table) startNewHand() error {
 		BoardCards:         make([]Card, 0, 5),
 		Pot:                0,
 		SidePots:           make([]*SidePot, 0),
+		// 盲注尚未入池，稍后在扣盲后把 CurrentBet 设为「当前街最高注」
 		CurrentBet:         0,
+		// 翻牌前第一次加注的最小增量通常为一个大盲
 		MinRaise:           t.BigBlind,
-		ActionOrder:        make([]int, 0),
+		ActionOrder:        make([]int, n),
 		CurrentPlayerIndex: -1,
 	}
 
 	// 3. 洗牌
 	t.CurrentHand.Deck.Shuffle()
 
-	// 确定行动顺序 (从 Button 左边开始)
-	// 先把 activeSeats 按从 Button 开始顺时针排序
-	orderedSeats := make([]int, 0, len(activeSeats))
-	for i := 1; i <= len(t.Seats); i++ {
-		seatIdx := (t.ButtonSeat + i) % len(t.Seats)
-		for _, s := range activeSeats {
-			if s == seatIdx {
-				orderedSeats = append(orderedSeats, seatIdx)
-				break
-			}
+	// 4. 顺时针遍历所有座位（从 SB 开始，即 BTN 的下一位）
+	// 在一个循环中完成：校验满员/准备状态、重置状态、发牌、排定行动顺序
+	for i := 1; i <= n; i++ {
+		seatIdx := (t.ButtonSeat + i) % n
+		p := t.Seats[seatIdx]
+
+		// 严格满员校验：中间发现空座或未准备，直接报错并回滚
+		if p == nil || p.State != PlayerStateReady {
+			t.CurrentHand = nil 
+			return fmt.Errorf("all seats must be occupied and ready to start (seat %d is not ready)", seatIdx)
 		}
+
+		// 初始化玩家本局状态
+		p.State = PlayerStateActive
+		p.CurrentBet = 0
+		p.HasActedThisRound = false
+
+		// 发牌：从小盲 (i=1) 开始顺时针发牌
+		cards, err := t.CurrentHand.Deck.Draw(2)
+		if err != nil {
+			t.CurrentHand = nil
+			return fmt.Errorf("failed to draw cards: %w", err)
+		}
+		p.HoleCards = cards
+
+		// 确定翻牌前行动顺序：
+		// 统一规则：BTN 后一位是 SB(i=1)，再后一位是 BB(i=2)。
+		// 翻牌前从 BB 的下一位 (i=3) 开始行动。
+		// 所以 i=3 对应 ActionOrder[0]，公式为 (i - 3 + n) % n
+		actionIdx := (i - 3 + n) % n
+		t.CurrentHand.ActionOrder[actionIdx] = seatIdx
 	}
 
-	var sbSeat, bbSeat int
-	if len(orderedSeats) == 2 {
-		// 2人桌：Button 是 SB，另一个是 BB
-		sbSeat = t.ButtonSeat
-		bbSeat = orderedSeats[0]
+	// 5. 强制扣除小盲注和大盲注
+	sbSeat := (t.ButtonSeat + 1) % n
+	bbSeat := (t.ButtonSeat + 2) % n
 
-		// 2人桌 PreFlop 行动顺序：SB(BTN) -> BB
-		t.CurrentHand.ActionOrder = []int{sbSeat, bbSeat}
-	} else {
-		// 多人桌：Button 左边第一个是 SB，第二个是 BB
-		sbSeat = orderedSeats[0]
-		bbSeat = orderedSeats[1]
-
-		// 多人桌 PreFlop 行动顺序：UTG (BB左边第一个) 开始，最后是 BB
-		for i := 2; i < len(orderedSeats); i++ {
-			t.CurrentHand.ActionOrder = append(t.CurrentHand.ActionOrder, orderedSeats[i])
-		}
-		t.CurrentHand.ActionOrder = append(t.CurrentHand.ActionOrder, sbSeat, bbSeat)
-	}
-
-	// 4. 强制扣除小盲注和大盲注
 	sbPlayer := t.Seats[sbSeat]
 	bbPlayer := t.Seats[bbSeat]
 
-	sbAmount := t.SmallBlind
-	if sbPlayer.Chips < sbAmount {
-		sbAmount = sbPlayer.Chips
-	}
-	sbPlayer.Chips -= sbAmount
-	sbPlayer.CurrentBet = sbAmount
+	sbAmount := sbPlayer.PlaceBet(t.SmallBlind)
 	t.CurrentHand.Pot += sbAmount
 
-	bbAmount := t.BigBlind
-	if bbPlayer.Chips < bbAmount {
-		bbAmount = bbPlayer.Chips
-	}
-	bbPlayer.Chips -= bbAmount
-	bbPlayer.CurrentBet = bbAmount
+	bbAmount := bbPlayer.PlaceBet(t.BigBlind)
 	t.CurrentHand.Pot += bbAmount
 
+	// 当前街「封顶注」= 完整的大盲金额
+	// 即使大盲玩家是短码（不够一个大盲并全下），后续玩家跟注的目标依然是完整的大盲金额
 	t.CurrentHand.CurrentBet = t.BigBlind
 
-	// 5. 给每个活跃玩家发 2 张底牌
-	for _, seatIdx := range activeSeats {
-		cards, err := t.CurrentHand.Deck.Draw(2)
-		if err != nil {
-			return fmt.Errorf("failed to draw cards: %w", err)
-		}
-		t.Seats[seatIdx].HoleCards = cards
-	}
-
-	// 6. 确定第一个说话的玩家
+	// 7. 确定第一个说话的玩家
 	t.CurrentHand.CurrentPlayerIndex = t.CurrentHand.ActionOrder[0]
 
-	// 7. 广播游戏开始的公共快照
-	t.messenger.Broadcast(MsgTypeStartHand, "start_hand", t.BuildPublicSnapshot())
-
-	// 8. 给每个玩家私发底牌
-	for _, seatIdx := range activeSeats {
+	// 8. 给每个玩家私发专属快照（包含他们自己的底牌）
+	for _, seatIdx := range t.CurrentHand.ActionOrder {
 		player := t.Seats[seatIdx]
-		payload := DealHoleCardsPayload{Cards: player.HoleCards}
-		t.messenger.SendTo(player.User.ID, MsgTypeDealHoleCards, "deal_hole_cards", payload)
+		// 生成专属快照，其中会包含该玩家的 HoleCards，其他人的 HoleCards 为 nil
+		snap := t.BuildPersonalSnapshot(player.User.ID)
+		t.messenger.SendTo(player.User.ID, MsgTypeStateUpdate, "deal_hole_cards", snap)
 	}
 
 	// 9. 通知第一个玩家行动
@@ -159,6 +119,15 @@ func (t *Table) notifyCurrentPlayer(timeoutSeconds int) {
 	}
 
 	player := t.Seats[t.CurrentHand.CurrentPlayerIndex]
+
+	// 如果玩家已经 All-in 或 Fold，理论上不应该被选为 CurrentPlayerIndex，
+	// 因为我们在 advanceStateMachine 中已经严格跳过了他们。
+	// 如果由于某种异常发生了，直接跳过他，推进状态机。
+	// 这里不再广播假动作，因为这属于异常拦截，正常流程不会走到这里。
+	if player.State == PlayerStateFolded || player.State == PlayerStateAllIn {
+		t.advanceStateMachine()
+		return
+	}
 
 	// 计算可用的动作和金额限制
 	callAmount := t.CurrentHand.CurrentBet - player.CurrentBet
@@ -205,18 +174,25 @@ func (t *Table) notifyCurrentPlayer(timeoutSeconds int) {
 		details.AllinAmount = player.Chips + player.CurrentBet
 	}
 
+	// 如果玩家已离线（托管状态），为了不让其他玩家干等，将思考时间缩短为配置的 OfflineTimeout
+	actualTimeout := timeoutSeconds
+	if player.IsOffline && actualTimeout > t.OfflineTimeout {
+		actualTimeout = t.OfflineTimeout
+	}
+
 	payload := TurnNotificationPayload{
 		PlayerID:       player.User.ID,
 		ValidActions:   validActions,
 		ActionDetails:  details,
-		TimeoutSeconds: timeoutSeconds,
+		TimeoutSeconds: actualTimeout,
 	}
 
-	t.messenger.SendTo(player.User.ID, MsgTypeTurnNotification, "turn_notification", payload)
+	// 广播行动通知，告诉所有人轮到谁了，以及倒计时是多少
+	t.messenger.Broadcast(MsgTypeTurnNotification, "turn_notification", payload)
 
 	// 启动玩家行动超时定时器
 	// 注意：这里不再需要手动创建 time.AfterFunc，而是交给 PausableTimer 统一管理
-	timeoutDuration := time.Duration(timeoutSeconds) * time.Second
+	timeoutDuration := time.Duration(actualTimeout) * time.Second
 	currentPlayerID := player.User.ID
 
 	t.actionTimer.Start(timeoutDuration, func() {
@@ -244,9 +220,6 @@ func (t *Table) notifyCurrentPlayer(timeoutSeconds int) {
 
 // processPlayerAction 处理玩家的具体下注/弃牌动作
 func (t *Table) processPlayerAction(playerID string, action ActionType, amount int) error {
-	// 停止当前的行动定时器
-	t.actionTimer.Stop()
-
 	seatIdx := t.getSeatIndexByUserID(playerID)
 	if seatIdx == -1 {
 		return fmt.Errorf("player not found in seat")
@@ -267,12 +240,8 @@ func (t *Table) processPlayerAction(playerID string, action ActionType, amount i
 		if callAmount == 0 {
 			return fmt.Errorf("cannot call, no bet to call")
 		}
-		if player.Chips < callAmount {
-			return fmt.Errorf("not enough chips to call")
-		}
-		player.Chips -= callAmount
-		player.CurrentBet += callAmount
-		t.CurrentHand.Pot += callAmount
+		// 使用 AddBet 自动处理筹码扣除、底池增加及 All-in 状态
+		t.CurrentHand.AddBet(player, callAmount)
 	case ActionTypeBet:
 		if t.CurrentHand.CurrentBet > 0 {
 			return fmt.Errorf("cannot bet, already a bet, use raise")
@@ -280,14 +249,7 @@ func (t *Table) processPlayerAction(playerID string, action ActionType, amount i
 		if amount < t.BigBlind {
 			return fmt.Errorf("bet amount must be at least big blind")
 		}
-		if player.Chips < amount {
-			return fmt.Errorf("not enough chips to bet")
-		}
-		player.Chips -= amount
-		player.CurrentBet += amount
-		t.CurrentHand.Pot += amount
-		t.CurrentHand.CurrentBet = amount
-		t.CurrentHand.MinRaise = amount
+		t.CurrentHand.AddBet(player, amount)
 	case ActionTypeRaise:
 		if t.CurrentHand.CurrentBet == 0 {
 			return fmt.Errorf("cannot raise, no bet yet, use bet")
@@ -297,35 +259,15 @@ func (t *Table) processPlayerAction(playerID string, action ActionType, amount i
 			return fmt.Errorf("raise amount must be at least %d", minRaiseTotal)
 		}
 		raiseAmount := amount - player.CurrentBet
-		if player.Chips < raiseAmount {
-			return fmt.Errorf("not enough chips to raise")
-		}
-		player.Chips -= raiseAmount
-		player.CurrentBet += raiseAmount
-		t.CurrentHand.Pot += raiseAmount
-
-		// 更新 MinRaise: 新的下注额 - 旧的下注额
-		t.CurrentHand.MinRaise = amount - t.CurrentHand.CurrentBet
-		t.CurrentHand.CurrentBet = amount
+		t.CurrentHand.AddBet(player, raiseAmount)
 	case ActionTypeAllIn:
-		allInAmount := player.Chips
-		player.Chips = 0
-		player.CurrentBet += allInAmount
-		t.CurrentHand.Pot += allInAmount
-		player.State = PlayerStateAllIn
-
-		// 如果 All-in 的金额大于当前最高下注额，更新最高下注额
-		if player.CurrentBet > t.CurrentHand.CurrentBet {
-			// 如果 All-in 构成了合法加注，更新 MinRaise
-			raiseDiff := player.CurrentBet - t.CurrentHand.CurrentBet
-			if raiseDiff >= t.CurrentHand.MinRaise {
-				t.CurrentHand.MinRaise = raiseDiff
-			}
-			t.CurrentHand.CurrentBet = player.CurrentBet
-		}
+		t.CurrentHand.AddBet(player, player.Chips)
 	default:
 		return fmt.Errorf("unknown action: %s", action)
 	}
+
+	// 动作校验通过并执行成功，此时停止该玩家的行动倒计时
+	t.actionTimer.Stop()
 
 	// 4. 标记该玩家本轮已行动
 	player.HasActedThisRound = true
@@ -396,12 +338,19 @@ func (t *Table) advanceStateMachine() {
 			nextIdx := (currIdx + i) % len(t.CurrentHand.ActionOrder)
 			nextSeatIdx := t.CurrentHand.ActionOrder[nextIdx]
 			player := t.Seats[nextSeatIdx]
+			
+			// 只有未弃牌、未 All-in，且（未行动过 或 下注额不足）的玩家才需要行动
 			if player.State != PlayerStateFolded && player.State != PlayerStateAllIn {
-				t.CurrentHand.CurrentPlayerIndex = nextSeatIdx
-				t.notifyCurrentPlayer(t.ActionTimeout)
-				return
+				if !player.HasActedThisRound || player.CurrentBet < t.CurrentHand.CurrentBet {
+					t.CurrentHand.CurrentPlayerIndex = nextSeatIdx
+					t.notifyCurrentPlayer(t.ActionTimeout)
+					return
+				}
 			}
 		}
+		
+		// 如果循环一圈都没找到需要行动的人（比如大家都在之前 All-in 了），直接进入下一阶段
+		t.nextStage()
 	}
 }
 

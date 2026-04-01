@@ -11,11 +11,12 @@ import (
 )
 
 type TableOptions struct {
-	PlayerCount   int `json:"player_count"`   // 开局必须达到的玩家数 (通常为 2, 6, 9)，同时也是座位的数量
-	SmallBlind    int `json:"small_blind"`    // 小盲注金额
-	BigBlind      int `json:"big_blind"`      // 大盲注金额
-	InitialChips  int `json:"initial_chips"`  // 初始筹码量
-	ActionTimeout int `json:"action_timeout"` // 玩家行动超时时间(秒)
+	PlayerCount    int `json:"player_count"`    // 开局必须达到的玩家数 (通常为 2, 6, 9)，同时也是座位的数量
+	SmallBlind     int `json:"small_blind"`     // 小盲注金额
+	BigBlind       int `json:"big_blind"`       // 大盲注金额
+	InitialChips   int `json:"initial_chips"`   // 初始筹码量
+	ActionTimeout  int `json:"action_timeout"`  // 玩家行动超时时间(秒)
+	OfflineTimeout int `json:"offline_timeout"` // 断线玩家的行动超时时间(秒)
 }
 
 // Table 德州扑克牌桌 (GameEngine 的具体实现)
@@ -25,10 +26,11 @@ type Table struct {
 	messenger core.Messenger // 注入的消息发送器 (在 OnInit 时传入)
 
 	// --- 房间规则/配置配置 (通常在游戏过程中不变) ---
-	SmallBlind    int // 小盲注金额
-	BigBlind      int // 大盲注金额
-	InitialChips  int // 初始筹码（玩家入座后统一分配的数量）
-	ActionTimeout int // 玩家行动超时时间(秒)
+	SmallBlind     int // 小盲注金额
+	BigBlind       int // 大盲注金额
+	InitialChips   int // 初始筹码（玩家入座后统一分配的数量）
+	ActionTimeout  int // 玩家行动超时时间(秒)
+	OfflineTimeout int // 断线玩家的行动超时时间(秒)
 
 	// --- 牌桌运行时状态 (随着游戏进行不断变化) ---
 	Seats       []*Player          // 座位数组，其长度即为该房间的 PlayerCount
@@ -51,10 +53,11 @@ func NewTable() *Table {
 
 	t := &Table{
 		// --- 默认房间配置 ---
-		SmallBlind:    smallBlind,
-		BigBlind:      2 * smallBlind,
-		InitialChips:  200 * smallBlind, // 默认 100 个大盲
-		ActionTimeout: 30,               // 默认 30 秒思考时间
+		SmallBlind:     smallBlind,
+		BigBlind:       2 * smallBlind,
+		InitialChips:   200 * smallBlind, // 默认 100 个大盲
+		ActionTimeout:  30,               // 默认 30 秒思考时间
+		OfflineTimeout: 5,                // 默认断线玩家 5 秒思考时间
 
 		// --- 运行时状态初始化 ---
 		Players:     make(map[string]*Player),
@@ -141,6 +144,10 @@ func (t *Table) OnInit(messenger core.Messenger, options []byte) error {
 
 		if opts.ActionTimeout >= 5 && opts.ActionTimeout <= 120 { // 思考时间 5~120 秒
 			t.ActionTimeout = opts.ActionTimeout
+		}
+
+		if opts.OfflineTimeout >= 1 && opts.OfflineTimeout <= 30 {
+			t.OfflineTimeout = opts.OfflineTimeout
 		}
 	}
 
@@ -472,8 +479,15 @@ func (t *Table) checkAndAutoStart() {
 	// 启动 3 秒倒计时
 	t.countdownTimer.Start(3*time.Second, func() {
 		t.messenger.Execute(func() {
-			// 倒计时结束后，再次检查条件是否仍然满足
-			t.startNewHand()
+			// 倒计时结束后，尝试开始新的一局
+			if err := t.startNewHand(); err != nil {
+				// 如果开局失败（比如有人在倒计时结束瞬间掉线导致不满员），广播错误并重置状态
+				t.CurrentHand = nil
+				t.messenger.Broadcast(core.MsgTypeError, "start_failed", err.Error())
+
+				// 重新检查是否满足开局条件（可能需要重新等待玩家准备）
+				t.checkAndAutoStart()
+			}
 		})
 	})
 

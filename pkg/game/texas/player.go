@@ -29,3 +29,20 @@ func NewPlayer(u *user.User, initialChips int) *Player {
 		BuyInCount:        1, // 初始带入算作第 1 次买入
 	}
 }
+
+// PlaceBet 从玩家筹码中扣除指定金额放入本轮下注中。
+// 如果筹码不足，则扣除所有剩余筹码（全下）。自动更新玩家的 Chips, CurrentBet 和 State。
+// 返回实际扣除的金额。
+func (p *Player) PlaceBet(amount int) int {
+	actual := amount
+	if p.Chips < actual {
+		actual = p.Chips
+	}
+	p.Chips -= actual
+	p.CurrentBet += actual
+
+	if p.Chips == 0 {
+		p.State = PlayerStateAllIn
+	}
+	return actual
+}

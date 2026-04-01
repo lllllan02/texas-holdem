@@ -29,12 +29,6 @@ type StateUpdateSnapshot struct {
 	Players []PlayerSnapshot `json:"players"` // 玩家状态列表（包含座位上的所有玩家）
 }
 
-// DealHoleCardsPayload 私发底牌的事件载荷
-// 仅在发牌阶段单独发送给对应的玩家，用于播放发牌动画
-type DealHoleCardsPayload struct {
-	Cards []Card `json:"cards"` // 发给该玩家的 2 张底牌
-}
-
 // PlayerSnapshot 单个玩家的状态快照
 type PlayerSnapshot struct {
 	ID                string       `json:"id"`                   // 玩家唯一标识

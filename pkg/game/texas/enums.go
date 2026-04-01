@@ -206,6 +206,5 @@ const (
 	MsgTypeStateUpdate      = "texas.state_update"      // 全量状态更新快照
 	MsgTypeCountdown        = "texas.countdown"         // 倒计时通知（如开局倒计时）
 	MsgTypeStartHand        = "texas.start_hand"        // 牌局正式开始
-	MsgTypeDealHoleCards    = "texas.deal_hole_cards"   // 私发底牌
 	MsgTypeTurnNotification = "texas.turn_notification" // 轮到某人行动的通知
 )
