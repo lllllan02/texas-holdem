@@ -18,8 +18,13 @@ type Message struct {
 }
 
 // ============================================================================
-// 服务端 -> 客户端：系统级消息类型 (Server -> Client MsgType)
+// 系统级消息类型 (System MsgType)
 // ============================================================================
 const (
 	MsgTypeError = "sys.error" // 错误提示
 )
+
+// ErrorPayload 统一的错误消息体结构
+type ErrorPayload struct {
+	Error string `json:"error"`
+}

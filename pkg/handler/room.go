@@ -1,52 +1,204 @@
 package handler
 
 import (
+	"encoding/json"
+	"log"
+
 	"github.com/lllllan02/texas-holdem/pkg/core"
 	"github.com/lllllan02/texas-holdem/pkg/user"
+	"github.com/lllllan02/texas-holdem/pkg/wscore"
 )
 
 // Room 通用房间：最外层的容器，负责网络连接、聊天、用户进出
 // 房间本身不关心具体玩什么游戏，它只负责挂载一个具体的 GameEngine
 type Room struct {
-	ID         string                `json:"id"`          // 房间的唯一内部标识（如 UUID，随机生成的一串字符）
-	RoomNumber string                `json:"room_number"` // 供玩家输入的短房间号（如 "888888"），作为进入凭据
-	Name       string                `json:"name"`
-	IsPaused   bool                  `json:"is_paused"` // 房间是否处于全局暂停状态
-	Users      map[string]*user.User `json:"users"`     // 当前在房间内的所有用户（包括玩家和旁观者）
-	GameEngine core.GameEngine       `json:"-"`         // 挂载的具体游戏引擎实例
+	// 房间基础信息
+	ID         string `json:"id"`          // 房间的唯一内部标识（如 UUID）
+	RoomNumber string `json:"room_number"` // 供玩家输入的短房间号（如 "888888"），作为进入凭据
+	OwnerID    string `json:"owner_id"`    // 房主的 UserID，用于权限校验
+
+	// 房间状态与数据
+	IsPaused bool                  `json:"is_paused"` // 房间是否处于全局暂停状态
+	Users    map[string]*user.User `json:"users"`     // 当前在房间内的所有用户（包括玩家和旁观者）
+
+	// 核心组件
+	GameEngine core.GameEngine           `json:"-"` // 挂载的具体游戏引擎实例
+	hub        *wscore.Hub               // WebSocket 事件循环核心
+	clients    map[string]*wscore.Client // 维护 UserID 到 Client 的映射
 }
 
-// 确保 Room 实现了 core.Messenger 接口
+// NewRoom 创建一个新的房间实例
+func NewRoom(id, roomNumber, ownerID string, engine core.GameEngine, options []byte) (*Room, error) {
+	r := &Room{
+		ID:         id,
+		RoomNumber: roomNumber,
+		OwnerID:    ownerID,
+		Users:      make(map[string]*user.User),
+		GameEngine: engine,
+		hub:        wscore.NewHub(),
+		clients:    make(map[string]*wscore.Client),
+	}
+
+	// 初始化游戏引擎
+	if err := r.GameEngine.OnInit(r, options); err != nil {
+		return nil, err
+	}
+
+	// 引擎初始化成功后，启动房间事件循环
+	go r.hub.Run()
+
+	return r, nil
+}
+
+// 确保 Room 实现了 core.Messenger 和 wscore.MessageHandler 接口
 var _ core.Messenger = (*Room)(nil)
 
 // Broadcast 广播给游戏内的所有玩家
 func (r *Room) Broadcast(msgType string, reason string, payload any) {
-	// TODO: 实现广播逻辑，例如将参数组装成 core.Message 并通过 wscore 发送给所有在房间内的用户
+	msg := core.Message{
+		Type:    msgType,
+		Reason:  reason,
+		Payload: payload,
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Room [%s] broadcast marshal error: %v", r.ID, err)
+		return
+	}
+	r.hub.BroadcastMessage(data)
 }
 
 // SendTo 私发给游戏内的特定玩家
 func (r *Room) SendTo(userID string, msgType string, reason string, payload any) {
-	// TODO: 实现私发逻辑，通过 wscore 找到特定用户的连接并发送
+	msg := core.Message{
+		Type:    msgType,
+		Reason:  reason,
+		Payload: payload,
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Room [%s] sendTo marshal error: %v", r.ID, err)
+		return
+	}
+
+	if client, ok := r.clients[userID]; ok {
+		client.SendMessage(data)
+	}
 }
 
-// Execute 提交异步任务到 Hub 的主循环中执行
+// Execute 提交异步任务到 Hub 的主循环中执行，保证状态修改的并发安全
 func (r *Room) Execute(task func()) {
-	// TODO: r.hub.Execute(task)
+	r.hub.Execute(task)
 }
 
-// ============================================================================
-// 房间级消息类型 (Room MsgType)
-// ============================================================================
+var _ wscore.MessageHandler = (*Room)(nil)
 
-// 客户端 -> 服务端
-const (
-	MsgTypeJoinRoom   = "room.join"   // 请求加入房间
-	MsgTypePauseGame  = "room.pause"  // 房主暂停游戏
-	MsgTypeResumeGame = "room.resume" // 房主恢复游戏
-)
+// Stop 停止房间并销毁游戏引擎
+func (r *Room) Stop() {
+	r.GameEngine.OnDestroy()
+	r.hub.Stop()
+}
 
-// 服务端 -> 客户端
-const (
-	MsgTypeWelcome    = "room.welcome" // 欢迎加入房间（返回分配的 UserID 等）
-	MsgTypeGamePaused = "room.paused"  // 游戏已暂停
-)
+// OnConnect 客户端连接建立
+func (r *Room) OnConnect(client *wscore.Client) {
+	userID := client.GetID()
+	r.clients[userID] = client
+
+	// 获取用户信息
+	u := user.GetUserByID(userID)
+	r.Users[userID] = u
+
+	// 通知客户端欢迎加入
+	r.SendTo(userID, MsgTypeWelcome, "", WelcomePayload{
+		RoomID:     r.ID,
+		RoomNumber: r.RoomNumber,
+		OwnerID:    r.OwnerID,
+		User:       u,
+		GameType:   r.GameEngine.GameType(),
+	})
+
+	// 通知游戏引擎玩家加入
+	r.GameEngine.OnPlayerJoin(u)
+
+	log.Printf("Room [%s] Client [%s] connected and joined", r.ID, userID)
+}
+
+// OnDisconnect 客户端断开连接
+func (r *Room) OnDisconnect(client *wscore.Client) {
+	userID := client.GetID()
+	delete(r.clients, userID)
+
+	// 如果用户在房间内，通知游戏引擎玩家离开
+	if _, ok := r.Users[userID]; ok {
+		delete(r.Users, userID)
+		r.GameEngine.OnPlayerLeave(userID)
+	}
+	log.Printf("Room [%s] Client [%s] disconnected", r.ID, userID)
+}
+
+// ClientMessage 用于接收客户端发来的消息
+type ClientMessage struct {
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+}
+
+// OnMessage 接收并处理客户端消息
+func (r *Room) OnMessage(client *wscore.Client, message []byte) {
+	var msg ClientMessage
+	if err := json.Unmarshal(message, &msg); err != nil {
+		log.Printf("Room [%s] unmarshal message error: %v", r.ID, err)
+		return
+	}
+
+	userID := client.GetID()
+
+	// 拦截房间级消息
+	switch msg.Type {
+	case MsgTypePauseGame:
+		r.handlePauseGame(userID)
+		return
+	case MsgTypeResumeGame:
+		r.handleResumeGame(userID)
+		return
+	}
+
+	// 其他消息转发给游戏引擎
+	if err := r.GameEngine.HandleMessage(userID, msg.Type, msg.Payload); err != nil {
+		log.Printf("Room [%s] engine handle message error: %v", r.ID, err)
+		r.SendTo(userID, core.MsgTypeError, "", core.ErrorPayload{Error: err.Error()})
+	}
+}
+
+func (r *Room) handlePauseGame(userID string) {
+	if userID != r.OwnerID {
+		r.SendTo(userID, core.MsgTypeError, "", core.ErrorPayload{Error: "only owner can pause game"})
+		return
+	}
+
+	if err := r.GameEngine.Pause(); err != nil {
+		r.SendTo(userID, core.MsgTypeError, "", core.ErrorPayload{Error: err.Error()})
+		return
+	}
+	r.IsPaused = true
+	r.Broadcast(MsgTypeGamePaused, "user_pause", GamePausedPayload{
+		IsPaused: true,
+		UserID:   userID,
+	})
+}
+
+func (r *Room) handleResumeGame(userID string) {
+	if userID != r.OwnerID {
+		r.SendTo(userID, core.MsgTypeError, "", core.ErrorPayload{Error: "only owner can resume game"})
+		return
+	}
+
+	if err := r.GameEngine.Resume(); err != nil {
+		r.SendTo(userID, core.MsgTypeError, "", core.ErrorPayload{Error: err.Error()})
+		return
+	}
+	r.IsPaused = false
+	r.Broadcast(MsgTypeGamePaused, "user_resume", GamePausedPayload{
+		IsPaused: false,
+		UserID:   userID,
+	})
+}
