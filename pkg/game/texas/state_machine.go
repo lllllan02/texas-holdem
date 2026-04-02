@@ -130,13 +130,14 @@ func (t *Table) notifyCurrentPlayer(timeoutSeconds int) {
 	// 计算可用的动作和金额限制
 	callAmount := t.CurrentHand.CurrentBet - player.CurrentBet
 
-	validActions := []ActionType{ActionTypeFold}
+	var validActions []ActionType
 
 	details := ActionDetails{}
 
 	if callAmount == 0 {
 		validActions = append(validActions, ActionTypeCheck)
 	} else {
+		validActions = append(validActions, ActionTypeFold)
 		if player.Chips > callAmount {
 			validActions = append(validActions, ActionTypeCall)
 			details.CallAmount = callAmount
