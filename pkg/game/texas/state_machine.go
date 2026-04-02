@@ -55,6 +55,7 @@ func (t *Table) startNewHand() error {
 
 		// 初始化玩家本局状态
 		p.State = PlayerStateActive
+		p.ChipsBeforeHand = p.Chips
 		p.CurrentBet = 0
 		p.HasActedThisRound = false
 
@@ -365,12 +366,7 @@ func (t *Table) earlyFinish(winner *Player) {
 	winner.Chips += totalWin
 
 	// 3. 广播结算快照
-	summary := &ShowdownSummary{
-		BoardCards: t.CurrentHand.BoardCards,
-		ShowCards:  false, // 提前结束不需要亮牌
-		SidePots:   t.CurrentHand.SidePots,
-		AllHands:   []HandInfo{},
-	}
+	summary := t.buildShowdownSummary(false)
 
 	snap := t.BuildPublicSnapshot()
 	snap.Stage = HandStageShowdown
@@ -533,7 +529,6 @@ func (t *Table) handleShowdown() {
 	t.calculateSidePots()
 
 	// 2. 评估所有未弃牌玩家的牌型大小
-	allHands := make([]HandInfo, 0)
 	playerRanks := make(map[string]*HandResult)
 
 	for _, p := range t.Seats {
@@ -543,12 +538,6 @@ func (t *Table) handleShowdown() {
 				// 真正的牌型评估逻辑 (7选5)
 				p.EvaluateHand(t.CurrentHand.BoardCards)
 				playerRanks[p.User.ID] = p.BestHand
-
-				allHands = append(allHands, HandInfo{
-					PlayerID: p.User.ID,
-					Cards:    p.HoleCards,
-					HandRank: p.BestHand.Rank,
-				})
 			}
 		}
 	}
@@ -610,12 +599,7 @@ func (t *Table) handleShowdown() {
 	}
 
 	// 4. 构建 ShowdownSummary
-	summary := &ShowdownSummary{
-		BoardCards: t.CurrentHand.BoardCards,
-		ShowCards:  true,
-		SidePots:   t.CurrentHand.SidePots,
-		AllHands:   allHands,
-	}
+	summary := t.buildShowdownSummary(true)
 
 	// 5. 广播结算快照
 	snap := t.BuildPublicSnapshot()

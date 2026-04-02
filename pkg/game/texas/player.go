@@ -15,6 +15,7 @@ type Player struct {
 	IsOffline         bool        // 是否已断线（断线不代表离开座位，只是进入托管状态）
 	BuyInCount        int         // 玩家买入/分配筹码的总次数（初始带入算第1次，破产重买算第2次...）
 	BestHand          *HandResult // 缓存的最佳牌型（在 Showdown 阶段计算并缓存）
+	ChipsBeforeHand   int         // 记录每局开始前玩家的筹码量，用于计算单局净盈亏
 }
 
 // NewPlayer 创建一个新的玩家实体

@@ -22,6 +22,7 @@ type StateUpdateSnapshot struct {
 	SidePots           []*SidePot       `json:"side_pots"`                  // 边池列表（当有玩家 All-in 时产生）
 	ShowdownSummary    *ShowdownSummary `json:"showdown_summary,omitempty"` // 摊牌结算信息（仅在 SHOWDOWN 阶段存在）
 	LastAction         *ActionInfo      `json:"last_action,omitempty"`      // 刚刚发生的动作（用于前端播放下注、弃牌等动画）
+	Histories          []*ShowdownSummary `json:"histories"`                // 历史对局记录列表，用于战绩回放
 
 	// --- 玩家列表 ---
 	Players []PlayerSnapshot `json:"players"` // 玩家状态列表（包含座位上的所有玩家）
@@ -112,6 +113,7 @@ func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 		ButtonSeat: t.ButtonSeat,
 		IsPaused:   t.IsPaused,
 		Players:    make([]PlayerSnapshot, 0),
+		Histories:  t.Histories,
 	}
 
 	// 1. 映射单局状态 (如果正在游戏中的话)
