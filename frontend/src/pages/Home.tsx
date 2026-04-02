@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { User, Settings } from 'lucide-react'
 import { useUser } from '../hooks/useUser'
@@ -14,6 +14,18 @@ export default function Home() {
   const [showJoinModal, setShowJoinModal] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
+  const [kickNotice, setKickNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    try {
+      const notice = sessionStorage.getItem('kick_notice')
+      if (!notice) return
+      sessionStorage.removeItem('kick_notice')
+      setKickNotice(notice)
+    } catch {
+      // ignore
+    }
+  }, [])
 
   const handleCreateRoom = async (roomOptions: any) => {
     if (!user) return;
@@ -64,6 +76,21 @@ export default function Home() {
         Texas Hold'em
       </h1>
       
+      {kickNotice && (
+        <div className="mb-4 w-full max-w-md bg-red-900/20 border border-red-900/40 text-red-200 rounded-xl px-4 py-3 flex items-start justify-between gap-3 shadow-lg">
+          <div className="text-sm leading-5">
+            {kickNotice}
+          </div>
+          <button
+            onClick={() => setKickNotice(null)}
+            className="text-red-200/70 hover:text-red-100 transition"
+            aria-label="关闭提示"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700 max-w-md w-full">
         {loading ? (
           <p className="text-gray-400 mb-6 text-center">加载用户信息中...</p>

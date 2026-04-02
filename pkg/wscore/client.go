@@ -34,6 +34,9 @@ type Client struct {
 	// 优雅关闭机制
 	closeCh   chan struct{} // 保证并发错误（如心跳超时、读写错误）时，向 Hub 的注销请求只发送一次，防止死锁。
 	closeOnce sync.Once     // Hub 确认注销后关闭的信号通道，WritePump 收到信号后退出循环并断开底层连接。
+
+	closePayloadMu sync.Mutex
+	closePayload   []byte // 可选：WebSocket Close 帧 payload（用于“顶号”等有原因的断开）
 }
 
 func (c *Client) GetID() string {
@@ -74,6 +77,17 @@ func (c *Client) Close() {
 			}()
 		}
 	})
+}
+
+// CloseWithReason 主动断开连接，并携带 Close 帧原因
+// code: 4000-4999 为应用自定义关闭码；text 为用户可读提示
+func (c *Client) CloseWithReason(code int, text string) {
+	c.closePayloadMu.Lock()
+	if c.closePayload == nil {
+		c.closePayload = websocket.FormatCloseMessage(code, text)
+	}
+	c.closePayloadMu.Unlock()
+	c.Close()
 }
 
 // NewClient 创建 WebSocket 客户端实例
@@ -183,7 +197,13 @@ func (c *Client) WritePump() {
 		case <-c.closeCh:
 			// Hub 通知连接关闭
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+			c.closePayloadMu.Lock()
+			payload := c.closePayload
+			c.closePayloadMu.Unlock()
+			if payload == nil {
+				payload = websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
+			}
+			c.conn.WriteMessage(websocket.CloseMessage, payload)
 			return
 
 		case <-ticker.C:

@@ -23,6 +23,7 @@ import (
 // Hub 是 WebSocket 连接管理器和事件循环核心
 type Hub struct {
 	clients map[*Client]bool // 活跃的客户端列表（仅在主循环中读写，无需加锁）
+	clientsByID map[string]*Client // 按 clientID 索引的活跃连接（用于顶号）
 
 	// 连接管理通道。
 	// 将并发的连接建立与断开事件转化为串行消息，交由主循环统一处理。
@@ -56,6 +57,7 @@ type clientMessage struct {
 func NewHub() *Hub {
 	return &Hub{
 		clients:        make(map[*Client]bool),
+		clientsByID:    make(map[string]*Client),
 		register:       make(chan *Client, 8),
 		unregister:     make(chan *Client, 8),
 		broadcast:      make(chan []byte, 64),
@@ -88,6 +90,16 @@ func (h *Hub) Run() {
 	for {
 		select {
 		case c := <-h.register:
+			// 顶号：同一个 clientID 只允许一个活跃连接
+			if c.id != "" {
+				if old := h.clientsByID[c.id]; old != nil && old != c {
+					// 给旧连接一个明确的关闭原因（前端可据此提示“被顶下线”）
+					old.CloseWithReason(4001, "该账号已在其他设备登录")
+					h.removeClient(old)
+				}
+				h.clientsByID[c.id] = c
+			}
+
 			h.clients[c] = true
 			log.Printf("Hub: Client [%s] registered. Total: %d", c.id, len(h.clients))
 
@@ -178,6 +190,9 @@ func (h *Hub) removeClient(c *Client) {
 	}
 
 	delete(h.clients, c)
+	if c.id != "" && h.clientsByID[c.id] == c {
+		delete(h.clientsByID, c.id)
+	}
 	close(c.closeCh) // 通知 WritePump 退出
 	log.Printf("Hub: Client [%s] unregistered. Total: %d", c.id, len(h.clients))
 

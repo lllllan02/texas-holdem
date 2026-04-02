@@ -10,10 +10,12 @@ export const useWebSocket = (roomNumber: string | null, userId: string | undefin
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastMessage, setLastMessage] = useState<Envelope | null>(null);
+  const [isKicked, setIsKicked] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
 
   const connect = useCallback(() => {
     if (!roomNumber || !userId) return;
+    if (isKicked) return;
 
     // 根据当前协议 (http/https) 决定 ws 协议 (ws/wss)
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -26,6 +28,7 @@ export const useWebSocket = (roomNumber: string | null, userId: string | undefin
       console.log('WebSocket Connected');
       setIsConnected(true);
       setError(null);
+      setIsKicked(false);
     };
 
     ws.onmessage = (event) => {
@@ -47,10 +50,14 @@ export const useWebSocket = (roomNumber: string | null, userId: string | undefin
       console.log('WebSocket Disconnected:', event.code, event.reason);
       setIsConnected(false);
       wsRef.current = null;
+      if (event.code === 4001) {
+        setIsKicked(true);
+        setError(event.reason || '该账号已在其他设备登录');
+      }
     };
 
     wsRef.current = ws;
-  }, [roomNumber, userId]);
+  }, [roomNumber, userId, isKicked]);
 
   const disconnect = useCallback(() => {
     if (wsRef.current) {
@@ -77,6 +84,7 @@ export const useWebSocket = (roomNumber: string | null, userId: string | undefin
 
   return {
     isConnected,
+    isKicked,
     error,
     lastMessage,
     sendMessage,

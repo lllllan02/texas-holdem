@@ -17,7 +17,7 @@ export default function Table() {
   const roomNumber = searchParams.get('room')
   
   // 初始化 WebSocket
-  const { lastMessage } = useWebSocket(roomNumber, user?.id)
+  const { lastMessage, isKicked, error } = useWebSocket(roomNumber, user?.id)
 
   useEffect(() => {
     if (!roomNumber) {
@@ -37,6 +37,16 @@ export default function Table() {
       navigate('/');
     }
   }, [lastMessage, user?.id, navigate]);
+
+  useEffect(() => {
+    if (!isKicked) return;
+    try {
+      sessionStorage.setItem('kick_notice', error || '该账号已在其他设备登录，你已下线');
+    } catch {
+      // ignore
+    }
+    navigate('/');
+  }, [isKicked, error, navigate]);
 
   const handleDeleteRoom = async () => {
     if (!roomNumber || !user?.id) return;
