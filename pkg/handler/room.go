@@ -95,6 +95,9 @@ var _ wscore.MessageHandler = (*Room)(nil)
 
 // Stop 停止房间并销毁游戏引擎
 func (r *Room) Stop() {
+	// 广播房间解散消息
+	r.Broadcast(MsgTypeRoomDestroy, "owner_deleted", nil)
+	
 	r.GameEngine.OnDestroy()
 	r.hub.Stop()
 }

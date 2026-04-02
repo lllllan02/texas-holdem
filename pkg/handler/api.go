@@ -31,6 +31,7 @@ func RegisterRoutes(r *gin.Engine) {
 	api := r.Group("/api/v1")
 	{
 		api.POST("/rooms", createRoom)
+		api.DELETE("/rooms/:room_number", deleteRoom)
 		
 		// 用户相关接口
 		api.GET("/users/:id", getUser)
@@ -102,6 +103,40 @@ func createRoom(c *gin.Context) {
 		RoomID:     roomID,
 		RoomNumber: roomNumber,
 	})
+}
+
+// deleteRoom 处理解散房间的 HTTP 请求
+func deleteRoom(c *gin.Context) {
+	roomNumber := c.Param("room_number")
+	ownerID := c.Query("owner_id")
+
+	if roomNumber == "" || ownerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "room_number and owner_id are required"})
+		return
+	}
+
+	globalRoomManager.mu.Lock()
+	room, exists := globalRoomManager.rooms[roomNumber]
+	if !exists {
+		globalRoomManager.mu.Unlock()
+		c.JSON(http.StatusNotFound, gin.H{"error": "room not found"})
+		return
+	}
+
+	if room.OwnerID != ownerID {
+		globalRoomManager.mu.Unlock()
+		c.JSON(http.StatusForbidden, gin.H{"error": "only owner can delete the room"})
+		return
+	}
+
+	// 停止房间的事件循环
+	room.Stop()
+	delete(globalRoomManager.rooms, roomNumber)
+	globalRoomManager.mu.Unlock()
+
+	log.Printf("Room deleted: Number: %s, Owner: %s", roomNumber, ownerID)
+
+	c.JSON(http.StatusOK, gin.H{"message": "room deleted successfully"})
 }
 
 // 用户相关接口

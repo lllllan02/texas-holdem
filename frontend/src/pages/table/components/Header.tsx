@@ -1,14 +1,17 @@
 import { Link } from 'react-router-dom'
-import { ArrowLeft, User, History, Settings } from 'lucide-react'
+import { ArrowLeft, User, History, Settings, LogOut } from 'lucide-react'
 
 interface HeaderProps {
   userName: string;
   userAvatar?: string;
+  roomNumber: string;
+  isOwner: boolean;
   onOpenHistory: () => void;
   onOpenSettings: () => void;
+  onDeleteRoom: () => void;
 }
 
-export function Header({ userName, userAvatar, onOpenHistory, onOpenSettings }: HeaderProps) {
+export function Header({ userName, userAvatar, roomNumber, isOwner, onOpenHistory, onOpenSettings, onDeleteRoom }: HeaderProps) {
   return (
     <header className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10">
       <Link to="/" className="flex items-center text-gray-400 hover:text-white transition">
@@ -17,7 +20,7 @@ export function Header({ userName, userAvatar, onOpenHistory, onOpenSettings }: 
       </Link>
       <div className="flex items-center gap-3 sm:gap-4">
         <div className="text-gray-400 text-sm hidden sm:block">
-          Room: <span className="text-white font-mono">123456</span>
+          Room: <span className="text-white font-mono">{roomNumber}</span>
         </div>
         <button 
           onClick={onOpenHistory}
@@ -44,6 +47,17 @@ export function Header({ userName, userAvatar, onOpenHistory, onOpenSettings }: 
             <Settings className="w-4 h-4" />
           </button>
         </div>
+
+        {isOwner && (
+          <button 
+            onClick={onDeleteRoom}
+            className="flex items-center gap-1.5 text-red-400 hover:text-red-300 transition bg-red-900/20 hover:bg-red-900/40 px-3 py-1.5 rounded-full border border-red-900/50"
+            title="解散房间"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="text-sm hidden sm:block">解散房间</span>
+          </button>
+        )}
       </div>
     </header>
   )

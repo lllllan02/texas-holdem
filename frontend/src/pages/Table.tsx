@@ -1,41 +1,54 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 
 import { Header } from './table/components/Header'
-import { MockControlPanel } from './table/components/MockControlPanel'
-import { GameInfoPanel } from './table/components/GameInfoPanel'
-import { Board } from './table/components/Board'
-import { SettlementOverlay } from './table/components/SettlementOverlay'
-import { PlayerSeat } from './table/components/PlayerSeat'
-import { ChatLog } from './table/components/ChatLog'
-import { ActionBar } from './table/components/ActionBar'
-import { HistoryModal } from './table/components/HistoryModal'
 import { SettingsModal } from '../components/SettingsModal'
 import { useUser } from '../hooks/useUser'
+import { useWebSocket } from '../hooks/useWebSocket'
+import { deleteRoom } from '../api/room'
 
-// 这是一个纯 UI 设计页面，没有接入后端数据
 export default function Table() {
   const { user, loading, updateUserInfo } = useUser()
-  
-  const [playerCount, setPlayerCount] = useState(9)
-  const [betAmount, setBetAmount] = useState(60)
-  const [showHistory, setShowHistory] = useState(false)
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const [showSettings, setShowSettings] = useState(false)
-  const [hideSettlement, setHideSettlement] = useState(false)
+  const [isOwner, setIsOwner] = useState(false)
   
-  // 游戏核心状态模拟
-  const [gameState, setGameState] = useState<'waiting' | 'playing' | 'settling'>('playing')
-  const [isReady, setIsReady] = useState(false)
-  const [currentPlayerIndex] = useState(4) // 模拟轮到玩家4
-  const [countdown] = useState(15) // 模拟倒计时 15 秒
-  const [canCheck] = useState(false) // 模拟当前是否可以过牌 (Check)
+  const roomNumber = searchParams.get('room')
   
-  // 获取真实用户昵称，若未加载完成则用默认值
-  const userName = user?.nickname || 'Loading...'
+  // 初始化 WebSocket
+  const { lastMessage } = useWebSocket(roomNumber, user?.id)
 
-  // 模拟数据
-  const minBet = 60;
-  const maxBet = 2336;
-  const bb = 20;
+  useEffect(() => {
+    if (!roomNumber) {
+      navigate('/')
+    }
+  }, [roomNumber, navigate])
+
+  // 监听 WebSocket 消息
+  useEffect(() => {
+    if (!lastMessage) return;
+
+    if (lastMessage.type === 'room.welcome') {
+      // 判断当前用户是否是房主
+      setIsOwner(lastMessage.payload.owner_id === user?.id);
+    } else if (lastMessage.type === 'room.destroyed') {
+      alert('房间已被房主解散');
+      navigate('/');
+    }
+  }, [lastMessage, user?.id, navigate]);
+
+  const handleDeleteRoom = async () => {
+    if (!roomNumber || !user?.id) return;
+    if (!window.confirm('确定要解散房间吗？此操作不可恢复。')) return;
+
+    try {
+      await deleteRoom(roomNumber, user.id);
+      // 解散成功后，后端会广播 room.destroyed 消息，前端收到后会自动跳转回大厅
+    } catch (err: any) {
+      alert(err.message || '解散房间失败');
+    }
+  };
 
   if (loading) {
     return <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">Loading user info...</div>
@@ -48,21 +61,14 @@ export default function Table() {
       <div className="flex-1 relative flex flex-col min-h-[60vh] lg:min-h-screen">
         
         <Header 
-          userName={userName} 
+          userName={user?.nickname || 'Loading...'} 
           userAvatar={user?.avatar}
-          onOpenHistory={() => setShowHistory(true)} 
+          roomNumber={roomNumber || 'Unknown'}
+          isOwner={isOwner}
+          onOpenHistory={() => {}} 
           onOpenSettings={() => setShowSettings(true)} 
+          onDeleteRoom={handleDeleteRoom}
         />
-
-        <MockControlPanel 
-          playerCount={playerCount} 
-          setPlayerCount={setPlayerCount} 
-          gameState={gameState} 
-          setGameState={setGameState} 
-          setHideSettlement={setHideSettlement} 
-        />
-
-        <GameInfoPanel />
 
         {/* 牌桌区域 */}
         <main className="flex-1 flex items-center justify-center p-4 sm:p-8 mt-16 lg:mt-0 relative">
@@ -72,57 +78,22 @@ export default function Table() {
             {/* 牌桌内圈线 */}
             <div className="absolute inset-3 sm:inset-4 rounded-[1000px] border-2 border-green-700 opacity-50 pointer-events-none"></div>
 
-            <Board gameState={gameState} />
-
-            <SettlementOverlay 
-              gameState={gameState} 
-              hideSettlement={hideSettlement} 
-              setHideSettlement={setHideSettlement} 
-              userName={userName} 
-            />
-
-            {/* 动态渲染玩家座位 */}
-            {Array.from({ length: playerCount }).map((_, i) => (
-              <PlayerSeat 
-                key={i} 
-                index={i} 
-                playerCount={playerCount} 
-                gameState={gameState} 
-                currentPlayerIndex={currentPlayerIndex} 
-                countdown={countdown} 
-                betAmount={betAmount} 
-              />
-            ))}
+            <div className="text-gray-400 font-mono text-lg animate-pulse">
+              Waiting for game data...
+            </div>
           </div>
         </main>
       </div>
 
       {/* 右侧/下方：侧边栏 (聊天与操作) */}
-      <aside className="w-full lg:w-80 xl:w-96 bg-gray-800 border-t lg:border-t-0 lg:border-l border-gray-700 flex flex-col z-30 h-auto lg:h-screen">
-        <ChatLog />
-        <ActionBar 
-          gameState={gameState} 
-          isReady={isReady} 
-          setIsReady={setIsReady} 
-          canCheck={canCheck} 
-          betAmount={betAmount} 
-          setBetAmount={setBetAmount} 
-          minBet={minBet} 
-          maxBet={maxBet} 
-          bb={bb} 
-        />
+      <aside className="w-full lg:w-80 xl:w-96 bg-gray-800 border-t lg:border-t-0 lg:border-l border-gray-700 flex flex-col z-30 h-auto lg:h-screen p-4 items-center justify-center text-gray-500">
+        Action Bar & Chat Placeholder
       </aside>
-
-      <HistoryModal 
-        show={showHistory} 
-        onClose={() => setShowHistory(false)} 
-        userName={userName} 
-      />
 
       <SettingsModal 
         show={showSettings} 
         onClose={() => setShowSettings(false)} 
-        userName={userName} 
+        userName={user?.nickname || ''} 
         userAvatar={user?.avatar}
         setUserInfo={async (name, avatar) => {
           try {

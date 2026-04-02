@@ -161,7 +161,18 @@ func (c *Client) WritePump() {
 			// 批量排空队列中积压的消息
 			n := len(c.send)
 			for i := 0; i < n; i++ {
-				w.Write([]byte{'\n'})
+				// Gorilla WebSocket 的 TextMessage 默认处理完整的 JSON 帧，
+				// 前端原生的 WebSocket.onmessage 也是按帧接收的。
+				// 如果在这里用换行符拼接多个 JSON，前端会收到一个包含多个 JSON 对象的长字符串，
+				// 导致 JSON.parse 失败。
+				// 更好的做法是：每个消息作为一个独立的 WebSocket 帧发送。
+				if err := w.Close(); err != nil {
+					return
+				}
+				w, err = c.conn.NextWriter(websocket.TextMessage)
+				if err != nil {
+					return
+				}
 				w.Write(<-c.send)
 			}
 

@@ -4,10 +4,11 @@ import "github.com/lllllan02/texas-holdem/pkg/user"
 
 // 房间级消息类型 (Room MsgType)
 const (
-	MsgTypePauseGame  = "room.pause"   // 房主暂停游戏
-	MsgTypeResumeGame = "room.resume"  // 房主恢复游戏
-	MsgTypeWelcome    = "room.welcome" // 欢迎加入房间（返回分配的 UserID 等）
-	MsgTypeGamePaused = "room.paused"  // 游戏已暂停
+	MsgTypePauseGame   = "room.pause"     // 房主暂停游戏
+	MsgTypeResumeGame  = "room.resume"    // 房主恢复游戏
+	MsgTypeWelcome     = "room.welcome"   // 欢迎加入房间（返回分配的 UserID 等）
+	MsgTypeGamePaused  = "room.paused"    // 游戏已暂停
+	MsgTypeRoomDestroy = "room.destroyed" // 房间已解散
 )
 
 // 房间级消息 Payload 结构体
