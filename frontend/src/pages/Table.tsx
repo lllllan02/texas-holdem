@@ -1,11 +1,26 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, User, MessageSquare } from 'lucide-react'
+import { ArrowLeft, User, MessageSquare, History, ChevronDown, ChevronUp, Settings } from 'lucide-react'
 
 // 这是一个纯 UI 设计页面，没有接入后端数据
 export default function Table() {
   const [playerCount, setPlayerCount] = useState(9)
   const [betAmount, setBetAmount] = useState(60)
+  const [showHistory, setShowHistory] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [hideSettlement, setHideSettlement] = useState(false)
+  const [expandedHistoryId, setExpandedHistoryId] = useState<number | null>(3)
+  
+  // 新增：游戏核心状态模拟
+  const [gameState, setGameState] = useState<'waiting' | 'playing' | 'settling'>('playing')
+  const [isReady, setIsReady] = useState(false)
+  const [currentPlayerIndex] = useState(4) // 模拟轮到玩家4
+  const [countdown] = useState(15) // 模拟倒计时 15 秒
+  const [canCheck] = useState(false) // 模拟当前是否可以过牌 (Check)
+  
+  // 模拟用户信息状态
+  const [userName, setUserName] = useState('MyNickname')
+  const [tempUserName, setTempUserName] = useState('')
 
   // 模拟数据
   const minBet = 60;
@@ -84,6 +99,72 @@ export default function Table() {
     return '';
   };
 
+  // 模拟历史对局数据
+  type HistoryDetail = {
+    role: string;
+    roleClass: string;
+    borderClass: string;
+    bgClass: string;
+    name: string;
+    cards: string[];
+    handType: string;
+    amountStr: string;
+    amountClass: string;
+    italic?: boolean;
+    isMe?: boolean;
+  };
+
+  type History = {
+    id: number;
+    pot: number;
+    board: string[];
+    details: HistoryDetail[];
+  };
+
+  const mockHistories: History[] = [
+    {
+      id: 4,
+      pot: 3200,
+      board: ['K♠', 'K♥', '9♦', '2♣', '5♠'],
+      details: [
+        { role: '主池赢家', roleClass: 'text-yellow-400', borderClass: 'border-green-900/30', bgClass: 'bg-gray-800', name: 'Player 1', cards: ['9♠', '9♣'], handType: '葫芦', amountStr: '+$1,200', amountClass: 'text-green-400' },
+        { role: '边池赢家', roleClass: 'text-yellow-400', borderClass: 'border-green-900/30', bgClass: 'bg-gray-800', name: 'MyNickname', isMe: true, cards: ['A♠', 'K♦'], handType: '三条', amountStr: '+$2,000', amountClass: 'text-green-400' },
+        { role: '输家', roleClass: 'text-gray-500', borderClass: 'border-transparent', bgClass: 'bg-gray-800/50', name: 'Player 3', cards: ['Q♠', 'Q♥'], handType: '两对', amountStr: '-$1,600', amountClass: 'text-red-400' }
+      ]
+    },
+    {
+      id: 3,
+      pot: 1500,
+      board: ['A♥', 'K♠', 'Q♦', 'J♣', '10♥'],
+      details: [
+        { role: '赢家', roleClass: 'text-yellow-400', borderClass: 'border-green-900/30', bgClass: 'bg-gray-800', name: 'Player 1', cards: ['A♦', 'A♠'], handType: '顺子', amountStr: '+$1,500', amountClass: 'text-green-400' },
+        { role: '输家', roleClass: 'text-gray-500', borderClass: 'border-transparent', bgClass: 'bg-gray-800/50', name: 'MyNickname', isMe: true, cards: ['K♠', 'Q♠'], handType: '两对', amountStr: '-$500', amountClass: 'text-red-400' }
+      ]
+    },
+    {
+      id: 2,
+      pot: 450,
+      board: ['7♠', '2♣', '9♥', '', ''],
+      details: [
+        { role: '赢家', roleClass: 'text-yellow-400', borderClass: 'border-green-900/30', bgClass: 'bg-gray-800', name: 'MyNickname', isMe: true, cards: [], handType: '其他玩家弃牌', amountStr: '+$450', amountClass: 'text-green-400', italic: true }
+      ]
+    },
+    {
+      id: 1,
+      pot: 2000,
+      board: ['A♠', 'K♠', 'Q♠', 'J♠', '10♠'],
+      details: [
+        { role: '平分', roleClass: 'text-blue-400', borderClass: 'border-blue-900/30', bgClass: 'bg-gray-800', name: 'Player 2', cards: ['2♥', '3♣'], handType: '皇家同花顺', amountStr: '+$1,000', amountClass: 'text-blue-400' },
+        { role: '平分', roleClass: 'text-blue-400', borderClass: 'border-blue-900/30', bgClass: 'bg-gray-800', name: 'Player 5', cards: ['4♦', '5♠'], handType: '皇家同花顺', amountStr: '+$1,000', amountClass: 'text-blue-400' }
+      ]
+    }
+  ];
+
+  const mockSettlementData = [
+    { title: '主池 (Main Pot)', winner: 'Player 1', hand: '葫芦', amount: '+$1,200', isMe: false },
+    { title: '边池 (Side Pot)', winner: 'MyNickname', hand: '三条', amount: '+$2,000', isMe: true }
+  ];
+
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col lg:flex-row overflow-hidden">
       
@@ -95,27 +176,86 @@ export default function Table() {
             <ArrowLeft className="w-5 h-5 mr-2" />
             Back to Lobby
           </Link>
-          <div className="text-gray-400 text-sm">
-            Room: <span className="text-white font-mono">123456</span>
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="text-gray-400 text-sm hidden sm:block">
+              Room: <span className="text-white font-mono">123456</span>
+            </div>
+            <button 
+              onClick={() => setShowHistory(true)}
+              className="flex items-center gap-1.5 text-gray-400 hover:text-white transition bg-gray-800/50 px-3 py-1.5 rounded-full border border-gray-700 hover:border-gray-500"
+            >
+              <History className="w-4 h-4" />
+              <span className="text-sm">History</span>
+            </button>
+            
+            {/* 用户信息与修改按钮 */}
+            <div className="flex items-center gap-2 bg-gray-800/50 pl-1 pr-2 py-1 rounded-full border border-gray-700">
+              <div className="w-7 h-7 bg-blue-600 rounded-full flex items-center justify-center shadow-inner">
+                <User className="w-4 h-4 text-white" />
+              </div>
+              <span className="text-sm text-white font-medium max-w-[80px] truncate">{userName}</span>
+              <button 
+                onClick={() => {
+                  setTempUserName(userName);
+                  setShowSettings(true);
+                }}
+                className="text-gray-400 hover:text-white transition p-1 hover:bg-gray-700 rounded-full"
+                title="修改用户信息"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </header>
 
         {/* 控制面板 (仅用于 UI 预览) */}
-        <div className="absolute top-16 right-4 sm:right-8 z-20 bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-xl w-48">
-          <label className="block text-sm text-green-400 font-semibold mb-3">
-            Table Size: {playerCount} Players
-          </label>
-          <input
-            type="range"
-            min="2"
-            max="9"
-            value={playerCount}
-            onChange={(e) => setPlayerCount(Number(e.target.value))}
-            className="w-full accent-green-500"
-          />
-          <div className="flex justify-between text-xs text-gray-500 mt-1">
-            <span>2</span>
-            <span>9</span>
+        <div className="absolute top-16 right-4 sm:right-8 z-20 bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-xl w-48 flex flex-col gap-3">
+          <div>
+            <label className="block text-sm text-green-400 font-semibold mb-2">
+              Table Size: {playerCount} Players
+            </label>
+            <input
+              type="range"
+              min="2"
+              max="9"
+              value={playerCount}
+              onChange={(e) => setPlayerCount(Number(e.target.value))}
+              className="w-full accent-green-500"
+            />
+          </div>
+          
+          <div className="border-t border-gray-700 pt-2">
+            <label className="block text-xs text-gray-400 mb-2">Game State (Mock)</label>
+            <select 
+              value={gameState}
+              onChange={(e) => {
+                setGameState(e.target.value as any);
+                if (e.target.value === 'settling') {
+                  setHideSettlement(false);
+                }
+              }}
+              className="w-full bg-gray-900 text-xs text-white border border-gray-600 rounded p-1"
+            >
+              <option value="waiting">Waiting</option>
+              <option value="playing">Playing</option>
+              <option value="settling">Settling</option>
+            </select>
+          </div>
+        </div>
+
+        {/* 游戏参数面板 */}
+        <div className="absolute top-16 left-4 sm:left-8 z-20 bg-gray-800/80 backdrop-blur-sm p-3 rounded-xl border border-gray-700 shadow-xl text-xs text-gray-300 flex flex-col gap-1.5 min-w-[120px]">
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-500">盲注 (SB/BB)</span>
+            <span className="font-mono text-white">10 / 20</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-500">前注 (Ante)</span>
+            <span className="font-mono text-white">0</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-500">买入范围</span>
+            <span className="font-mono text-white">400 - 2000</span>
           </div>
         </div>
 
@@ -137,9 +277,58 @@ export default function Table() {
             </div>
 
             {/* 底池信息 (Pot) */}
-            <div className="absolute top-1/4 left-1/2 -translate-x-1/2 bg-black/60 px-4 py-1 rounded-full text-green-400 font-bold text-xs sm:text-sm border border-green-900/50">
-              Pot: $1,500
-            </div>
+            {gameState !== 'settling' && (
+              <div className="absolute top-1/4 left-1/2 -translate-x-1/2 bg-black/60 px-4 py-1 rounded-full text-green-400 font-bold text-xs sm:text-sm border border-green-900/50 transition-opacity">
+                Pot: $1,500
+              </div>
+            )}
+
+            {/* 结算画面 (Settlement) */}
+            {gameState === 'settling' && !hideSettlement && (
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 flex flex-col items-center animate-in fade-in zoom-in duration-500">
+                <div className="bg-black/80 backdrop-blur-md px-6 py-4 rounded-2xl border-2 border-yellow-500/50 shadow-[0_0_30px_rgba(234,179,8,0.3)] flex flex-col gap-3 relative min-w-[280px]">
+                  <button 
+                    onClick={() => setHideSettlement(true)}
+                    className="absolute top-2 right-3 text-gray-400 hover:text-white transition"
+                    title="隐藏结算面板"
+                  >
+                    ✕
+                  </button>
+                  <div className="text-yellow-400 font-black text-xl text-center border-b border-gray-700/50 pb-2">
+                    本局结算
+                  </div>
+                  
+                  <div className="flex flex-col gap-2">
+                    {mockSettlementData.map((item, idx) => (
+                      <div key={idx} className="flex flex-col bg-gray-900/60 p-2.5 rounded-lg border border-gray-700/50">
+                        <div className="text-xs text-gray-400 mb-1.5">{item.title}</div>
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-sm font-bold ${item.isMe ? 'text-blue-400' : 'text-white'}`}>
+                              {item.isMe ? userName : item.winner} {item.isMe && '(You)'}
+                            </span>
+                            <span className="text-xs text-gray-300 bg-gray-800 px-1.5 py-0.5 rounded border border-gray-700">{item.hand}</span>
+                          </div>
+                          <div className="text-green-400 font-bold text-base">
+                            {item.amount}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 隐藏结算时的恢复按钮 */}
+            {gameState === 'settling' && hideSettlement && (
+              <button 
+                onClick={() => setHideSettlement(false)}
+                className="absolute top-24 left-1/2 -translate-x-1/2 z-40 bg-yellow-600/90 hover:bg-yellow-500 text-white text-xs font-bold px-4 py-1.5 rounded-full shadow-lg backdrop-blur-sm transition-all border border-yellow-400 animate-in fade-in slide-in-from-top-4"
+              >
+                查看结算
+              </button>
+            )}
 
             {/* 动态渲染玩家座位 */}
             {Array.from({ length: playerCount }).map((_, i) => {
@@ -168,6 +357,7 @@ export default function Table() {
 
               const isFolded = playerState === 'folded';
               const isAllIn = playerState === 'allin';
+              const isCurrentTurn = i === currentPlayerIndex && gameState === 'playing';
 
               // 模拟底牌显示状态 (自己或对手1可见，弃牌不显示)
               const showCards = (isMe || i === 1) && !isFolded; 
@@ -221,9 +411,14 @@ export default function Table() {
                         </div>
                       )}
                       <div className="relative z-20">
-                        <div className="bg-blue-600/90 px-3 sm:px-4 py-1 rounded-full text-xs sm:text-sm font-bold border border-blue-400 shadow-lg whitespace-nowrap">
+                        <div className={`bg-blue-600/90 px-3 sm:px-4 py-1 rounded-full text-xs sm:text-sm font-bold border ${isCurrentTurn ? 'border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.6)] animate-pulse' : 'border-blue-400 shadow-lg'} whitespace-nowrap transition-all duration-300`}>
                           You ($2500)
                         </div>
+                        {isCurrentTurn && (
+                          <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-yellow-500 text-black text-xs font-bold px-2 py-0.5 rounded-full shadow-lg animate-bounce">
+                            {countdown}s
+                          </div>
+                        )}
                         {getMockPosition(playerCount, i) && (
                           <div className="absolute -right-2 -top-2 min-w-[20px] px-1 h-5 bg-white rounded-full border border-gray-300 flex items-center justify-center text-black text-[9px] font-bold shadow-sm z-30">
                             {getMockPosition(playerCount, i)}
@@ -235,8 +430,16 @@ export default function Table() {
                     <>
                       {/* 头像和信息 */}
                       <div className="flex flex-col items-center z-20 relative">
-                        <div className={`w-10 h-10 sm:w-12 sm:h-12 bg-gray-700 rounded-full border-2 ${isAllIn ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.6)]' : 'border-gray-500'} shadow-lg flex items-center justify-center mb-1 relative`}>
+                        <div className={`w-10 h-10 sm:w-12 sm:h-12 bg-gray-700 rounded-full border-2 ${isAllIn ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.6)]' : isCurrentTurn ? 'border-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.8)] animate-pulse' : 'border-gray-500'} shadow-lg flex items-center justify-center mb-1 relative transition-all duration-300`}>
                           <User className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" />
+                          
+                          {/* 倒计时气泡 */}
+                          {isCurrentTurn && (
+                            <div className="absolute -top-6 bg-yellow-500 text-black text-xs font-bold px-2 py-0.5 rounded-full shadow-lg animate-bounce z-40">
+                              {countdown}s
+                            </div>
+                          )}
+
                           {getMockPosition(playerCount, i) && (
                             <div className="absolute -right-3 -bottom-2 min-w-[20px] px-1 h-5 bg-white rounded-full border border-gray-300 flex items-center justify-center text-black text-[9px] font-bold shadow-sm z-30">
                               {getMockPosition(playerCount, i)}
@@ -346,73 +549,289 @@ export default function Table() {
         {/* 操作面板 (Action Bar) */}
         <div className="p-4 sm:p-6 bg-gray-800 border-t border-gray-700 shadow-[0_-10px_30px_rgba(0,0,0,0.3)] lg:shadow-none flex flex-col gap-4">
           
-          {/* 顶部下注控制区 */}
-          <div className="bg-gray-900/60 rounded-xl p-4 border border-gray-700 flex flex-col gap-3">
-            {/* 输入框与 BB 显示 */}
-            <div className="flex items-center gap-3">
-              <input 
-                type="number" 
-                value={betAmount}
-                onChange={(e) => setBetAmount(Number(e.target.value))}
-                className="flex-1 bg-gray-800 border border-gray-600 rounded-md px-3 py-2 text-white font-bold focus:outline-none focus:border-blue-500 transition-colors"
-              />
-              <span className="text-gray-400 text-sm w-16 whitespace-nowrap">
-                ({(betAmount / bb).toFixed(1)} BB)
-              </span>
+          {gameState === 'playing' ? (
+            <>
+              {/* 顶部下注控制区 */}
+              <div className="bg-gray-900/60 rounded-xl p-4 border border-gray-700 flex flex-col gap-3">
+                {/* 输入框与 BB 显示 */}
+                <div className="flex items-center gap-3">
+                  <input 
+                    type="number" 
+                    value={betAmount}
+                    onChange={(e) => setBetAmount(Number(e.target.value))}
+                    className="flex-1 bg-gray-800 border border-gray-600 rounded-md px-3 py-2 text-white font-bold focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                  <span className="text-gray-400 text-sm w-16 whitespace-nowrap">
+                    ({(betAmount / bb).toFixed(1)} BB)
+                  </span>
+                </div>
+
+                {/* 范围提示 */}
+                <div className="text-gray-400 text-xs">
+                  范围: {minBet} - {maxBet}
+                </div>
+
+                {/* 滑动条 */}
+                <input 
+                  type="range" 
+                  min={minBet} 
+                  max={maxBet} 
+                  value={betAmount}
+                  onChange={(e) => setBetAmount(Number(e.target.value))}
+                  className="w-full accent-blue-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                />
+
+                {/* 快捷下注按钮 */}
+                <div className="grid grid-cols-5 gap-2 mt-1">
+                  <button onClick={() => setBetAmount(minBet)} className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs sm:text-sm py-2 rounded border border-gray-600 transition-colors">
+                    最小
+                  </button>
+                  <button onClick={() => setBetAmount(bb * 3)} className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs sm:text-sm py-2 rounded border border-gray-600 transition-colors">
+                    3BB
+                  </button>
+                  <button onClick={() => setBetAmount(bb * 4)} className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs sm:text-sm py-2 rounded border border-gray-600 transition-colors">
+                    4BB
+                  </button>
+                  <button onClick={() => setBetAmount(bb * 5)} className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs sm:text-sm py-2 rounded border border-gray-600 transition-colors">
+                    5BB
+                  </button>
+                  <button onClick={() => setBetAmount(maxBet)} className="bg-red-900/20 hover:bg-red-900/40 text-red-400 text-xs sm:text-sm py-2 rounded border border-red-800/50 transition-colors">
+                    全押
+                  </button>
+                </div>
+              </div>
+
+              {/* 底部动作按钮区 (2x2 网格) */}
+              <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                {canCheck ? (
+                  <button className="bg-[#4b5563] hover:bg-[#374151] text-white font-bold py-2.5 sm:py-3 rounded-lg shadow-md transition-colors text-sm sm:text-base">
+                    过牌 (Check)
+                  </button>
+                ) : (
+                  <button className="bg-[#4b5563] hover:bg-[#374151] text-white font-bold py-2.5 sm:py-3 rounded-lg shadow-md transition-colors text-sm sm:text-base">
+                    弃牌 (Fold)
+                  </button>
+                )}
+                
+                <button className="bg-[#16a34a] hover:bg-[#15803d] text-white font-bold py-2.5 sm:py-3 rounded-lg shadow-md transition-colors text-sm sm:text-base">
+                  跟注 20
+                </button>
+                <button className="bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-bold py-2.5 sm:py-3 rounded-lg shadow-md transition-colors text-sm sm:text-base">
+                  下注 {betAmount}
+                </button>
+                <button className="bg-[#dc2626] hover:bg-[#b91c1c] text-white font-bold py-2.5 sm:py-3 rounded-lg shadow-md transition-colors text-sm sm:text-base">
+                  全下 {maxBet}
+                </button>
+              </div>
+            </>
+          ) : (
+            // 等待/结算阶段的准备按钮
+            <div className="flex flex-col items-center justify-center h-full min-h-[160px] gap-4">
+              <p className="text-gray-400 text-sm">
+                {gameState === 'waiting' ? '等待其他玩家准备...' : '对局结算中...'}
+              </p>
+              {isReady ? (
+                <button 
+                  onClick={() => setIsReady(false)}
+                  className="w-full max-w-[200px] bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-lg shadow-md transition-colors text-lg border border-gray-500"
+                >
+                  取消准备
+                </button>
+              ) : (
+                <button 
+                  onClick={() => setIsReady(true)}
+                  className="w-full max-w-[200px] bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(22,163,74,0.5)] transition-all hover:shadow-[0_0_20px_rgba(22,163,74,0.8)] text-lg border border-green-400"
+                >
+                  准备 (Ready)
+                </button>
+              )}
             </div>
-
-            {/* 范围提示 */}
-            <div className="text-gray-400 text-xs">
-              范围: {minBet} - {maxBet}
-            </div>
-
-            {/* 滑动条 */}
-            <input 
-              type="range" 
-              min={minBet} 
-              max={maxBet} 
-              value={betAmount}
-              onChange={(e) => setBetAmount(Number(e.target.value))}
-              className="w-full accent-blue-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-            />
-
-            {/* 快捷下注按钮 */}
-            <div className="grid grid-cols-5 gap-2 mt-1">
-              <button onClick={() => setBetAmount(minBet)} className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs sm:text-sm py-2 rounded border border-gray-600 transition-colors">
-                最小
-              </button>
-              <button onClick={() => setBetAmount(bb * 3)} className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs sm:text-sm py-2 rounded border border-gray-600 transition-colors">
-                3BB
-              </button>
-              <button onClick={() => setBetAmount(bb * 4)} className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs sm:text-sm py-2 rounded border border-gray-600 transition-colors">
-                4BB
-              </button>
-              <button onClick={() => setBetAmount(bb * 5)} className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs sm:text-sm py-2 rounded border border-gray-600 transition-colors">
-                5BB
-              </button>
-              <button onClick={() => setBetAmount(maxBet)} className="bg-red-900/20 hover:bg-red-900/40 text-red-400 text-xs sm:text-sm py-2 rounded border border-red-800/50 transition-colors">
-                全押
-              </button>
-            </div>
-          </div>
-
-          {/* 底部动作按钮区 (2x2 网格) */}
-          <div className="grid grid-cols-2 gap-2 sm:gap-3">
-            <button className="bg-[#4b5563] hover:bg-[#374151] text-white font-bold py-2.5 sm:py-3 rounded-lg shadow-md transition-colors text-sm sm:text-base">
-              弃牌
-            </button>
-            <button className="bg-[#16a34a] hover:bg-[#15803d] text-white font-bold py-2.5 sm:py-3 rounded-lg shadow-md transition-colors text-sm sm:text-base">
-              跟注 20
-            </button>
-            <button className="bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-bold py-2.5 sm:py-3 rounded-lg shadow-md transition-colors text-sm sm:text-base">
-              下注 {betAmount}
-            </button>
-            <button className="bg-[#dc2626] hover:bg-[#b91c1c] text-white font-bold py-2.5 sm:py-3 rounded-lg shadow-md transition-colors text-sm sm:text-base">
-              全下 {maxBet}
-            </button>
-          </div>
+          )}
         </div>
       </aside>
+
+      {/* 历史对局弹窗 */}
+      {showHistory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <History className="w-5 h-5 text-blue-400" />
+                历史对局记录
+              </h2>
+              <button 
+                onClick={() => setShowHistory(false)}
+                className="text-gray-400 hover:text-white transition"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+              {mockHistories.map(history => {
+                const isExpanded = expandedHistoryId === history.id;
+                return (
+                  <div key={history.id} className="bg-gray-900/50 rounded-lg border border-gray-700 overflow-hidden">
+                    {/* 浓缩行 (Header) */}
+                    <div 
+                      className="flex justify-between items-center p-3 cursor-pointer hover:bg-gray-800/80 transition-colors"
+                      onClick={() => setExpandedHistoryId(isExpanded ? null : history.id)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-gray-400 text-sm font-mono w-16">Hand #{history.id}</span>
+                        <div className="flex flex-col gap-1">
+                          {history.details.filter(d => d.amountStr.startsWith('+')).slice(0, 1).map((winner, idx) => (
+                            <div key={idx} className="flex items-center gap-2 text-xs">
+                              <span className={`font-medium ${winner.isMe ? 'text-blue-400' : 'text-gray-300'}`}>
+                                {winner.name} {winner.isMe && '(You)'}
+                              </span>
+                              
+                              {winner.cards.length > 0 && (
+                                <>
+                                  <span className="text-gray-600">|</span>
+                                  <div className="flex gap-0.5">
+                                    {winner.cards.map((c, i) => (
+                                      <div key={i} className={`w-4 h-6 bg-white rounded-sm shadow-sm border border-gray-300 flex items-center justify-center font-bold text-[9px] ${c.includes('♥') || c.includes('♦') ? 'text-red-500' : 'text-black'}`}>
+                                        {c}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </>
+                              )}
+                              
+                              <span className="text-gray-600">|</span>
+                              <span className="text-gray-400">{winner.handType}</span>
+                              
+                              <span className="text-gray-600">|</span>
+                              <span className="text-green-400 font-bold">{winner.amountStr}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span className="text-gray-400 font-bold text-sm">Pot: ${history.pot}</span>
+                        {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+                      </div>
+                    </div>
+
+                    {/* 展开详情 */}
+                    {isExpanded && (
+                      <div className="p-4 border-t border-gray-800 bg-gray-900/30">
+                        <div className="flex gap-2 mb-4 justify-center">
+                          {history.board.map((card, idx) => (
+                            card ? (
+                              <div key={idx} className={`w-8 h-12 bg-white rounded shadow-sm border border-gray-300 flex items-center justify-center font-bold text-sm ${card.includes('♥') || card.includes('♦') ? 'text-red-500' : 'text-black'}`}>
+                                {card}
+                              </div>
+                            ) : (
+                              <div key={idx} className="w-8 h-12 bg-gray-800 rounded border border-gray-700 opacity-50"></div>
+                            )
+                          ))}
+                        </div>
+
+                        <div className="space-y-2">
+                          {history.details.map((detail, idx) => (
+                            <div key={idx} className={`flex justify-between items-center p-2 rounded border ${detail.borderClass} ${detail.bgClass}`}>
+                              <div className="flex items-center gap-2">
+                                <span className={`${detail.roleClass} text-xs font-bold w-12`}>{detail.role}</span>
+                                <span className={`text-sm ${detail.isMe ? 'text-blue-400 font-bold' : 'text-white'}`}>
+                                  {detail.name} {detail.isMe && '(You)'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                {detail.cards.length > 0 && (
+                                  <div className="flex gap-1 mr-2">
+                                    {detail.cards.map((c, i) => (
+                                      <div key={i} className={`w-5 h-7 bg-white rounded-sm shadow-sm border border-gray-300 flex items-center justify-center font-bold text-[10px] ${c.includes('♥') || c.includes('♦') ? 'text-red-500' : 'text-black'}`}>
+                                        {c}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <span className={`text-gray-400 text-xs ${detail.italic ? 'italic' : ''}`}>{detail.handType}</span>
+                                <span className={`${detail.amountClass} font-bold text-sm`}>{detail.amountStr}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              
+              {/* 暂无更多记录 */}
+              <div className="text-center text-gray-500 text-sm py-4">
+                没有更多记录了
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 设置弹窗 */}
+      {showSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-sm flex flex-col">
+            <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Settings className="w-5 h-5 text-blue-400" />
+                修改用户信息
+              </h2>
+              <button 
+                onClick={() => setShowSettings(false)}
+                className="text-gray-400 hover:text-white transition"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="p-6 flex flex-col gap-4">
+              <div className="flex flex-col items-center gap-3 mb-2">
+                <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center shadow-inner relative group cursor-pointer">
+                  <User className="w-8 h-8 text-white" />
+                  <div className="absolute inset-0 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                    <span className="text-white text-xs">更换</span>
+                  </div>
+                </div>
+                <span className="text-xs text-gray-500">点击更换头像 (暂未实现)</span>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-sm text-gray-400 font-medium">昵称</label>
+                <input 
+                  type="text" 
+                  value={tempUserName}
+                  onChange={(e) => setTempUserName(e.target.value)}
+                  placeholder="请输入您的昵称"
+                  maxLength={12}
+                  className="bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-gray-700 flex justify-end gap-3 bg-gray-900/30 rounded-b-xl">
+              <button 
+                onClick={() => setShowSettings(false)}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-700 transition-colors"
+              >
+                取消
+              </button>
+              <button 
+                onClick={() => {
+                  if (tempUserName.trim()) {
+                    setUserName(tempUserName.trim());
+                    setShowSettings(false);
+                  }
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow-md"
+              >
+                保存修改
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )
