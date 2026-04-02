@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { User, Settings } from 'lucide-react'
+import { User, Settings, Clock, Play, Pause, Crown } from 'lucide-react'
 import { useUser } from '../hooks/useUser'
 import { SettingsModal } from '../components/SettingsModal'
 import { CreateRoomModal } from '../components/CreateRoomModal'
 import { JoinRoomModal } from '../components/JoinRoomModal'
-import { createRoom, getRoom } from '../api/room'
+import { createRoom, getRoom, getUserActiveRooms } from '../api/room'
+import type { UserActiveRoom } from '../api/room'
 
 export default function Home() {
   const { user, loading, updateUserInfo } = useUser()
@@ -16,6 +17,7 @@ export default function Home() {
   const [isCreating, setIsCreating] = useState(false)
   const [kickNotice, setKickNotice] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [activeRooms, setActiveRooms] = useState<UserActiveRoom[]>([])
 
   useEffect(() => {
     try {
@@ -34,6 +36,33 @@ export default function Home() {
       // ignore
     }
   }, [])
+
+  useEffect(() => {
+    const fetchActiveRooms = async () => {
+      if (!user) return
+      try {
+        const { rooms } = await getUserActiveRooms(user.id)
+        setActiveRooms(rooms.sort((a, b) => b.joined_at - a.joined_at))
+      } catch (err: any) {
+        console.error('Failed to fetch active rooms:', err)
+      }
+    }
+
+    fetchActiveRooms()
+  }, [user])
+
+  const formatJoinTime = (timestamp: number) => {
+    const now = Date.now()
+    const diff = now - timestamp * 1000
+    const minutes = Math.floor(diff / 60000)
+    const hours = Math.floor(diff / 3600000)
+    const days = Math.floor(diff / 86400000)
+
+    if (minutes < 1) return '刚刚'
+    if (minutes < 60) return `${minutes}分钟前`
+    if (hours < 24) return `${hours}小时前`
+    return `${days}天前`
+  }
 
   const handleCreateRoom = async (roomOptions: any) => {
     if (!user) return;
@@ -59,6 +88,15 @@ export default function Home() {
     } catch (err: any) {
       setNotice(err?.message || '房间不存在或已被回收')
       setShowJoinModal(false)
+    }
+  };
+
+  const handleQuickJoinRoom = async (roomNumber: string) => {
+    try {
+      await getRoom(roomNumber)
+      navigate(`/table?room=${roomNumber}`)
+    } catch (err: any) {
+      setNotice(err?.message || '房间不存在或已被回收')
     }
   };
 
@@ -145,6 +183,61 @@ export default function Home() {
             加入房间
           </button>
         </div>
+
+        {activeRooms && activeRooms.length > 0 && (
+          <div className="mt-8">
+            <div className="flex items-center gap-2 mb-4 text-gray-300">
+              <Clock className="w-4 h-4" />
+              <span className="text-sm font-medium">最近加入的房间</span>
+              <span className="text-xs text-gray-500">({activeRooms.length})</span>
+            </div>
+            
+            <div className="space-y-3">
+              {activeRooms.map((room) => (
+                <button
+                  key={room.room_number}
+                  onClick={() => handleQuickJoinRoom(room.room_number)}
+                  className={`w-full ${room.is_owner ? 'bg-gradient-to-r from-green-700/30 to-green-800/30 hover:from-green-700/50 hover:to-green-800/50 border border-green-600/40 hover:border-green-500/60' : 'bg-gradient-to-r from-gray-700/60 to-gray-800/60 hover:from-green-700/40 hover:to-green-800/40 border border-gray-600 hover:border-green-500/50'} rounded-xl p-4 text-left transition-all duration-300 group relative overflow-hidden`}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
+                  
+                  <div className="flex items-center justify-between relative z-10">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        {room.is_owner && <Crown className="w-3 h-3 text-green-400" />}
+                        <div className="text-white font-semibold text-lg group-hover:text-green-300 transition-colors">
+                          {room.room_number}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {room.is_paused ? (
+                          <>
+                            <Pause className="w-3 h-3 text-yellow-400" />
+                            <span className="text-gray-400 text-xs">已暂停</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3 h-3 text-green-400" />
+                            <span className="text-gray-400 text-xs">进行中</span>
+                          </>
+                        )}
+                        <span className="text-gray-500 text-xs ml-2">• {formatJoinTime(room.joined_at)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-gray-400 group-hover:text-white transition-colors text-sm font-medium">
+                        进入
+                      </div>
+                      <div className={`w-8 h-8 ${room.is_owner ? 'bg-gray-600/50 group-hover:bg-green-600' : 'bg-gray-600/50 group-hover:bg-green-600'} rounded-lg flex items-center justify-center transition-all duration-300`}>
+                        <span className="text-gray-300 group-hover:text-white text-lg">→</span>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <SettingsModal 

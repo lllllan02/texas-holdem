@@ -56,3 +56,25 @@ export const getRoom = async (roomNumber: string): Promise<GetRoomResponse> => {
   }
   return response.json();
 };
+
+export interface UserActiveRoom {
+  room_id: string;
+  room_number: string;
+  owner_id: string;
+  is_paused: boolean;
+  is_owner: boolean;
+  joined_at: number;
+}
+
+export interface GetUserActiveRoomsResponse {
+  rooms: UserActiveRoom[];
+}
+
+export const getUserActiveRooms = async (userId: string): Promise<GetUserActiveRoomsResponse> => {
+  const response = await fetch(`/api/v1/users/${userId}/rooms`, { method: 'GET' });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || '获取房间列表失败');
+  }
+  return response.json();
+};

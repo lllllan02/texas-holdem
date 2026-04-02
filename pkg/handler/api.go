@@ -27,12 +27,11 @@ func RegisterRoutes(r *gin.Engine) {
 		api.POST("/rooms", createRoom)
 		api.GET("/rooms/:room_number", getRoom)
 		api.DELETE("/rooms/:room_number", deleteRoom)
-		
-		// 用户相关接口
+
+		api.GET("/users/:id/rooms", getUserActiveRooms)
 		api.GET("/users/:id", getUser)
 		api.PUT("/users/:id", updateUser)
 
-		// 文件上传接口
 		api.POST("/upload", uploadFileHandler)
 	}
 
@@ -168,6 +167,17 @@ func getUser(c *gin.Context) {
 
 	u := user.GetUserByID(userID)
 	c.JSON(http.StatusOK, u)
+}
+
+func getUserActiveRooms(c *gin.Context) {
+	userID := c.Param("id")
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user id is required"})
+		return
+	}
+
+	rooms := globalRoomManager.GetUserActiveRooms(userID)
+	c.JSON(http.StatusOK, gin.H{"rooms": rooms})
 }
 
 // UpdateUserRequest 更新用户信息的请求体

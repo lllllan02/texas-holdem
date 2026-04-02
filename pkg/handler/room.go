@@ -25,7 +25,7 @@ type Room struct {
 	GameEngine core.GameEngine           `json:"-"` // 挂载的具体游戏引擎实例
 	hub        *wscore.Hub               // WebSocket 事件循环核心
 	clients    map[string]*wscore.Client // 维护 UserID 到 Client 的映射
-	stopped      bool
+	stopped    bool
 
 	manager *RoomManager
 }
@@ -106,7 +106,7 @@ func (r *Room) Stop() {
 
 	// 广播房间解散消息
 	r.Broadcast(MsgTypeRoomDestroy, "owner_deleted", nil)
-	
+
 	r.GameEngine.OnDestroy()
 	r.hub.Stop()
 }
@@ -117,13 +117,13 @@ func (r *Room) OnConnect(client *wscore.Client) {
 	r.clients[userID] = client
 	if r.manager != nil {
 		r.manager.OnRoomActive(r.RoomNumber)
+		isOwner := userID == r.OwnerID
+		r.manager.RecordUserRoom(userID, r.RoomNumber, isOwner)
 	}
 
-	// 获取用户信息
 	u := user.GetUserByID(userID)
 	r.Users[userID] = u
 
-	// 通知客户端欢迎加入
 	r.SendTo(userID, MsgTypeWelcome, "", WelcomePayload{
 		RoomID:     r.ID,
 		RoomNumber: r.RoomNumber,
@@ -132,7 +132,6 @@ func (r *Room) OnConnect(client *wscore.Client) {
 		GameType:   r.GameEngine.GameType(),
 	})
 
-	// 通知游戏引擎玩家加入
 	r.GameEngine.OnPlayerJoin(u)
 
 	log.Printf("Room [%s] Client [%s] connected and joined", r.ID, userID)

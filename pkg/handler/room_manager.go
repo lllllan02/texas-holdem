@@ -8,17 +8,19 @@ import (
 
 // RoomManager 管理所有活跃的房间，并负责自动回收空闲房间
 type RoomManager struct {
-	mu           sync.RWMutex
-	rooms        map[string]*Room
-	idleTimers   map[string]*time.Timer
-	recycleAfter time.Duration
+	mu              sync.RWMutex
+	rooms           map[string]*Room
+	idleTimers      map[string]*time.Timer
+	recycleAfter    time.Duration
+	userRoomManager *UserRoomManager
 }
 
 func NewRoomManager(recycleAfter time.Duration) *RoomManager {
 	return &RoomManager{
-		rooms:        make(map[string]*Room),
-		idleTimers:   make(map[string]*time.Timer),
-		recycleAfter: recycleAfter,
+		rooms:           make(map[string]*Room),
+		idleTimers:      make(map[string]*time.Timer),
+		recycleAfter:    recycleAfter,
+		userRoomManager: NewUserRoomManager(),
 	}
 }
 
@@ -46,6 +48,9 @@ func (m *RoomManager) Delete(roomNumber string) (*Room, bool) {
 	delete(m.rooms, roomNumber)
 	m.cancelIdleTimerLocked(roomNumber)
 	m.mu.Unlock()
+
+	m.userRoomManager.RemoveRoom(roomNumber)
+
 	return room, true
 }
 
@@ -94,6 +99,8 @@ func (m *RoomManager) OnRoomEmpty(roomNumber string) {
 			m.cancelIdleTimerLocked(roomNumber)
 			m.mu.Unlock()
 
+			m.userRoomManager.RemoveRoom(roomNumber)
+
 			log.Printf("Room auto recycled: Number=%s (idle %s)", roomNumber, m.recycleAfter)
 			room.Stop()
 		})
@@ -110,3 +117,32 @@ func (m *RoomManager) cancelIdleTimerLocked(roomNumber string) {
 	delete(m.idleTimers, roomNumber)
 }
 
+func (m *RoomManager) RecordUserRoom(userID, roomNumber string, isOwner bool) {
+	m.userRoomManager.RecordUserRoom(userID, roomNumber, isOwner)
+}
+
+func (m *RoomManager) GetUserActiveRooms(userID string) []map[string]interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	userRooms := m.userRoomManager.GetUserRooms(userID)
+	if userRooms == nil {
+		return nil
+	}
+
+	result := make([]map[string]interface{}, 0, len(userRooms))
+	for roomNumber, userRoom := range userRooms {
+		if room, ok := m.rooms[roomNumber]; ok {
+			result = append(result, map[string]interface{}{
+				"room_id":     room.ID,
+				"room_number": room.RoomNumber,
+				"owner_id":    room.OwnerID,
+				"is_paused":   room.IsPaused,
+				"is_owner":    userRoom.IsOwner,
+				"joined_at":   userRoom.JoinedAt.Unix(),
+			})
+		}
+	}
+
+	return result
+}
