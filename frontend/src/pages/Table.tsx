@@ -51,7 +51,7 @@ export default function Table() {
   };
 
   if (loading) {
-    return <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">Loading user info...</div>
+    return <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">加载用户信息中...</div>
   }
 
   return (
@@ -61,9 +61,9 @@ export default function Table() {
       <div className="flex-1 relative flex flex-col min-h-[60vh] lg:min-h-screen">
         
         <Header 
-          userName={user?.nickname || 'Loading...'} 
+          userName={user?.nickname || '加载中...'} 
           userAvatar={user?.avatar}
-          roomNumber={roomNumber || 'Unknown'}
+          roomNumber={roomNumber || '未知'}
           isOwner={isOwner}
           onOpenHistory={() => {}} 
           onOpenSettings={() => setShowSettings(true)} 
@@ -79,7 +79,7 @@ export default function Table() {
             <div className="absolute inset-3 sm:inset-4 rounded-[1000px] border-2 border-green-700 opacity-50 pointer-events-none"></div>
 
             <div className="text-gray-400 font-mono text-lg animate-pulse">
-              Waiting for game data...
+              等待游戏数据...
             </div>
           </div>
         </main>
@@ -87,7 +87,7 @@ export default function Table() {
 
       {/* 右侧/下方：侧边栏 (聊天与操作) */}
       <aside className="w-full lg:w-80 xl:w-96 bg-gray-800 border-t lg:border-t-0 lg:border-l border-gray-700 flex flex-col z-30 h-auto lg:h-screen p-4 items-center justify-center text-gray-500">
-        Action Bar & Chat Placeholder
+        操作栏与聊天占位符
       </aside>
 
       <SettingsModal 

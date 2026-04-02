@@ -63,11 +63,11 @@ export function ActionBar({ gameState, isReady, setIsReady, canCheck, betAmount,
           <div className="grid grid-cols-2 gap-2 sm:gap-3">
             {canCheck ? (
               <button className="bg-[#4b5563] hover:bg-[#374151] text-white font-bold py-2.5 sm:py-3 rounded-lg shadow-md transition-colors text-sm sm:text-base">
-                过牌 (Check)
+                过牌
               </button>
             ) : (
               <button className="bg-[#4b5563] hover:bg-[#374151] text-white font-bold py-2.5 sm:py-3 rounded-lg shadow-md transition-colors text-sm sm:text-base">
-                弃牌 (Fold)
+                弃牌
               </button>
             )}
             
@@ -99,7 +99,7 @@ export function ActionBar({ gameState, isReady, setIsReady, canCheck, betAmount,
               onClick={() => setIsReady(true)}
               className="w-full max-w-[200px] bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-lg shadow-[0_0_15px_rgba(22,163,74,0.5)] transition-all hover:shadow-[0_0_20px_rgba(22,163,74,0.8)] text-lg border border-green-400"
             >
-              准备 (Ready)
+              准备
             </button>
           )}
         </div>

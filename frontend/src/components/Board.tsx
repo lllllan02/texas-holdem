@@ -15,7 +15,7 @@ export function Board({ gameState }: BoardProps) {
 
       {gameState !== 'settling' && (
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 bg-black/60 px-4 py-1 rounded-full text-green-400 font-bold text-xs sm:text-sm border border-green-900/50 transition-opacity">
-          Pot: $1,500
+          底池: $1,500
         </div>
       )}
     </>

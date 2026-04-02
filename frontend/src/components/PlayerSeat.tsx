@@ -84,7 +84,7 @@ export function PlayerSeat({ index, playerCount, gameState, currentPlayerIndex, 
           )}
           <div className="relative z-20">
             <div className={`bg-blue-600/90 px-3 sm:px-4 py-1 rounded-full text-xs sm:text-sm font-bold border ${isCurrentTurn ? 'border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.6)] animate-pulse' : 'border-blue-400 shadow-lg'} whitespace-nowrap transition-all duration-300`}>
-              You ($2500)
+              你 ($2500)
             </div>
             {isCurrentTurn && (
               <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-yellow-500 text-black text-xs font-bold px-2 py-0.5 rounded-full shadow-lg animate-bounce">
@@ -117,17 +117,17 @@ export function PlayerSeat({ index, playerCount, gameState, currentPlayerIndex, 
               )}
               {isFolded && (
                 <div className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center">
-                   <span className="text-white text-[10px] font-bold transform -rotate-12">FOLD</span>
+                   <span className="text-white text-[10px] font-bold transform -rotate-12">弃牌</span>
                 </div>
               )}
               {isAllIn && (
                 <div className="absolute -top-2 bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm animate-pulse whitespace-nowrap">
-                  ALL IN
+                  全下
                 </div>
               )}
             </div>
             <div className="bg-black/70 px-2 py-1 rounded text-[10px] sm:text-xs whitespace-nowrap border border-gray-700">
-              Player {index} ({isAllIn ? '$0' : '$1000'})
+              玩家 {index} ({isAllIn ? '$0' : '$1000'})
             </div>
           </div>
 

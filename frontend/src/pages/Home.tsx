@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { User, Settings } from 'lucide-react'
 import { useUser } from '../hooks/useUser'
 import { SettingsModal } from '../components/SettingsModal'
+import { CreateRoomModal } from '../components/CreateRoomModal'
+import { JoinRoomModal } from '../components/JoinRoomModal'
 import { createRoom } from '../api/room'
 
 export default function Home() {
@@ -11,17 +13,9 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false)
   const [showJoinModal, setShowJoinModal] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [joinRoomNumber, setJoinRoomNumber] = useState('')
   const [isCreating, setIsCreating] = useState(false)
-  const [roomOptions, setRoomOptions] = useState({
-    player_count: 9,
-    small_blind: 10,
-    big_blind: 20,
-    initial_chips: 2000,
-    action_timeout: 30
-  })
 
-  const handleCreateRoom = async () => {
+  const handleCreateRoom = async (roomOptions: any) => {
     if (!user) return;
     setIsCreating(true);
     try {
@@ -35,9 +29,9 @@ export default function Home() {
     }
   };
 
-  const handleJoinRoom = () => {
-    if (!joinRoomNumber.trim()) return;
-    navigate(`/table?room=${joinRoomNumber.trim()}`);
+  const handleJoinRoom = (roomNumber: string) => {
+    if (!roomNumber.trim()) return;
+    navigate(`/table?room=${roomNumber.trim()}`);
   };
 
   return (
@@ -72,10 +66,10 @@ export default function Home() {
       
       <div className="bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700 max-w-md w-full">
         {loading ? (
-          <p className="text-gray-400 mb-6 text-center">Loading user info...</p>
+          <p className="text-gray-400 mb-6 text-center">加载用户信息中...</p>
         ) : (
           <p className="text-gray-400 mb-6 text-center">
-            Welcome, <span className="text-blue-400 font-bold">{user?.nickname}</span>! Ready to join the table?
+            欢迎, <span className="text-blue-400 font-bold">{user?.nickname}</span>! 准备好加入牌桌了吗？
           </p>
         )}
         <div className="flex flex-col gap-4">
@@ -84,13 +78,13 @@ export default function Home() {
             disabled={loading || !user}
             className="bg-green-600 hover:bg-green-500 disabled:bg-green-800 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
           >
-            Create Room
+            创建房间
           </button>
           <button 
             onClick={() => setShowJoinModal(true)}
             className="bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
           >
-            Join Room
+            加入房间
           </button>
         </div>
       </div>
@@ -110,131 +104,18 @@ export default function Home() {
         }} 
       />
 
-      {/* Join Room Modal */}
-      {showJoinModal && (
-        <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowJoinModal(false);
-          }}
-        >
-          <div className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-sm flex flex-col p-6 animate-in fade-in zoom-in duration-200">
-            <h2 className="text-xl font-bold text-white mb-4">Join Room</h2>
-            <input 
-              type="text" 
-              value={joinRoomNumber}
-              onChange={(e) => setJoinRoomNumber(e.target.value)}
-              placeholder="Enter 6-digit room number"
-              className="bg-gray-900 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition-colors mb-6 font-mono text-center tracking-widest text-lg"
-              maxLength={6}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleJoinRoom();
-                if (e.key === 'Escape') setShowJoinModal(false);
-              }}
-            />
-            <div className="flex justify-end gap-3">
-              <button 
-                onClick={() => setShowJoinModal(false)}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-700 transition-colors"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={handleJoinRoom}
-                disabled={!joinRoomNumber.trim()}
-                className="px-6 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white transition-colors shadow-md"
-              >
-                Join
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <JoinRoomModal 
+        show={showJoinModal} 
+        onClose={() => setShowJoinModal(false)} 
+        onJoin={handleJoinRoom} 
+      />
 
-      {/* Create Room Modal */}
-      {showCreateModal && (
-        <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !isCreating) setShowCreateModal(false);
-          }}
-        >
-          <div className="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl w-full max-w-sm flex flex-col p-6 animate-in fade-in zoom-in duration-200">
-            <h2 className="text-xl font-bold text-white mb-6">Create Room</h2>
-            
-            <div className="flex flex-col gap-4 mb-6">
-              <div className="flex justify-between items-center">
-                <label className="text-sm text-gray-400">Player Count</label>
-                <select 
-                  value={roomOptions.player_count}
-                  onChange={(e) => setRoomOptions({...roomOptions, player_count: Number(e.target.value)})}
-                  className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-blue-500"
-                >
-                  {[2,3,4,5,6,7,8,9].map(n => <option key={n} value={n}>{n} Players</option>)}
-                </select>
-              </div>
-              
-              <div className="flex justify-between items-center">
-                <label className="text-sm text-gray-400">Small Blind</label>
-                <input 
-                  type="number" 
-                  value={roomOptions.small_blind}
-                  onChange={(e) => setRoomOptions({...roomOptions, small_blind: Number(e.target.value)})}
-                  className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-white text-sm w-24 text-right focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="flex justify-between items-center">
-                <label className="text-sm text-gray-400">Big Blind</label>
-                <input 
-                  type="number" 
-                  value={roomOptions.big_blind}
-                  onChange={(e) => setRoomOptions({...roomOptions, big_blind: Number(e.target.value)})}
-                  className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-white text-sm w-24 text-right focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="flex justify-between items-center">
-                <label className="text-sm text-gray-400">Initial Chips</label>
-                <input 
-                  type="number" 
-                  value={roomOptions.initial_chips}
-                  onChange={(e) => setRoomOptions({...roomOptions, initial_chips: Number(e.target.value)})}
-                  className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-white text-sm w-24 text-right focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="flex justify-between items-center">
-                <label className="text-sm text-gray-400">Action Timeout (s)</label>
-                <input 
-                  type="number" 
-                  value={roomOptions.action_timeout}
-                  onChange={(e) => setRoomOptions({...roomOptions, action_timeout: Number(e.target.value)})}
-                  className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-white text-sm w-24 text-right focus:outline-none focus:border-blue-500"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3">
-              <button 
-                onClick={() => setShowCreateModal(false)}
-                disabled={isCreating}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-700 transition-colors"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={handleCreateRoom}
-                disabled={isCreating}
-                className="px-6 py-2 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-500 disabled:bg-green-800 text-white transition-colors shadow-md"
-              >
-                {isCreating ? 'Creating...' : 'Create'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CreateRoomModal 
+        show={showCreateModal} 
+        onClose={() => setShowCreateModal(false)} 
+        isCreating={isCreating} 
+        onCreate={handleCreateRoom} 
+      />
     </div>
   )
 }

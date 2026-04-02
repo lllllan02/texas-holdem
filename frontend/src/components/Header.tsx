@@ -16,18 +16,18 @@ export function Header({ userName, userAvatar, roomNumber, isOwner, onOpenHistor
     <header className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10">
       <Link to="/" className="flex items-center text-gray-400 hover:text-white transition">
         <ArrowLeft className="w-5 h-5 mr-2" />
-        Back to Lobby
+        返回大厅
       </Link>
       <div className="flex items-center gap-3 sm:gap-4">
         <div className="text-gray-400 text-sm hidden sm:block">
-          Room: <span className="text-white font-mono">{roomNumber}</span>
+          房间号: <span className="text-white font-mono">{roomNumber}</span>
         </div>
         <button 
           onClick={onOpenHistory}
           className="flex items-center gap-1.5 text-gray-400 hover:text-white transition bg-gray-800/50 px-3 py-1.5 rounded-full border border-gray-700 hover:border-gray-500"
         >
           <History className="w-4 h-4" />
-          <span className="text-sm">History</span>
+          <span className="text-sm">历史对局</span>
         </button>
         
         <div className="flex items-center gap-2 bg-gray-800/50 pl-1 pr-2 py-1 rounded-full border border-gray-700">

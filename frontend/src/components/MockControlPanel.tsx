@@ -11,7 +11,7 @@ export function MockControlPanel({ playerCount, setPlayerCount, gameState, setGa
     <div className="absolute top-16 right-4 sm:right-8 z-20 bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-xl w-48 flex flex-col gap-3">
       <div>
         <label className="block text-sm text-green-400 font-semibold mb-2">
-          Table Size: {playerCount} Players
+          桌子大小: {playerCount} 人
         </label>
         <input
           type="range"
@@ -24,7 +24,7 @@ export function MockControlPanel({ playerCount, setPlayerCount, gameState, setGa
       </div>
       
       <div className="border-t border-gray-700 pt-2">
-        <label className="block text-xs text-gray-400 mb-2">Game State (Mock)</label>
+        <label className="block text-xs text-gray-400 mb-2">游戏状态 (Mock)</label>
         <select 
           value={gameState}
           onChange={(e) => {
@@ -35,9 +35,9 @@ export function MockControlPanel({ playerCount, setPlayerCount, gameState, setGa
           }}
           className="w-full bg-gray-900 text-xs text-white border border-gray-600 rounded p-1"
         >
-          <option value="waiting">Waiting</option>
-          <option value="playing">Playing</option>
-          <option value="settling">Settling</option>
+          <option value="waiting">等待中</option>
+          <option value="playing">游戏中</option>
+          <option value="settling">结算中</option>
         </select>
       </div>
     </div>
