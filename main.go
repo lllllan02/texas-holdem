@@ -17,6 +17,9 @@ func main() {
 	// 注册跨域中间件（如果是前后端分离项目需要）
 	r.Use(corsMiddleware())
 
+	// 配置文件上传目录的静态文件服务
+	r.Static("/uploads", "./uploads")
+
 	// 注册业务路由和 WebSocket 接口
 	handler.RegisterRoutes(r)
 

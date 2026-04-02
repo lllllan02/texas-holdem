@@ -9,10 +9,13 @@ import { PlayerSeat } from './table/components/PlayerSeat'
 import { ChatLog } from './table/components/ChatLog'
 import { ActionBar } from './table/components/ActionBar'
 import { HistoryModal } from './table/components/HistoryModal'
-import { SettingsModal } from './table/components/SettingsModal'
+import { SettingsModal } from '../components/SettingsModal'
+import { useUser } from '../hooks/useUser'
 
 // 这是一个纯 UI 设计页面，没有接入后端数据
 export default function Table() {
+  const { user, loading, updateUserInfo } = useUser()
+  
   const [playerCount, setPlayerCount] = useState(9)
   const [betAmount, setBetAmount] = useState(60)
   const [showHistory, setShowHistory] = useState(false)
@@ -26,13 +29,17 @@ export default function Table() {
   const [countdown] = useState(15) // 模拟倒计时 15 秒
   const [canCheck] = useState(false) // 模拟当前是否可以过牌 (Check)
   
-  // 模拟用户信息状态
-  const [userName, setUserName] = useState('MyNickname')
+  // 获取真实用户昵称，若未加载完成则用默认值
+  const userName = user?.nickname || 'Loading...'
 
   // 模拟数据
   const minBet = 60;
   const maxBet = 2336;
   const bb = 20;
+
+  if (loading) {
+    return <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">Loading user info...</div>
+  }
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col lg:flex-row overflow-hidden">
@@ -42,6 +49,7 @@ export default function Table() {
         
         <Header 
           userName={userName} 
+          userAvatar={user?.avatar}
           onOpenHistory={() => setShowHistory(true)} 
           onOpenSettings={() => setShowSettings(true)} 
         />
@@ -115,7 +123,15 @@ export default function Table() {
         show={showSettings} 
         onClose={() => setShowSettings(false)} 
         userName={userName} 
-        setUserName={setUserName} 
+        userAvatar={user?.avatar}
+        setUserInfo={async (name, avatar) => {
+          try {
+            await updateUserInfo(name, avatar);
+          } catch (e) {
+            console.error('Failed to update user info', e);
+            alert('修改失败');
+          }
+        }} 
       />
 
     </div>

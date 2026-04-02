@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -33,6 +35,9 @@ func RegisterRoutes(r *gin.Engine) {
 		// 用户相关接口
 		api.GET("/users/:id", getUser)
 		api.PUT("/users/:id", updateUser)
+
+		// 文件上传接口
+		api.POST("/upload", uploadFileHandler)
 	}
 
 	// WebSocket 升级接口
@@ -139,6 +144,35 @@ func updateUser(c *gin.Context) {
 	// 目前简单起见，仅更新数据库（内存缓存），下次用户重连或刷新时生效
 
 	c.JSON(http.StatusOK, u)
+}
+
+// uploadFileHandler 处理文件上传
+func uploadFileHandler(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no file uploaded"})
+		return
+	}
+
+	// 确保 uploads 目录存在
+	if err := os.MkdirAll("uploads", 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create uploads directory"})
+		return
+	}
+
+	// 生成唯一文件名
+	ext := filepath.Ext(file.Filename)
+	newFileName := uuid.New().String() + ext
+	savePath := filepath.Join("uploads", newFileName)
+
+	// 保存文件
+	if err := c.SaveUploadedFile(file, savePath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save file"})
+		return
+	}
+
+	// 返回文件的访问 URL
+	c.JSON(http.StatusOK, gin.H{"url": "/uploads/" + newFileName})
 }
 
 // WebSocket 接口
