@@ -41,3 +41,18 @@ export const deleteRoom = async (roomNumber: string, ownerId: string): Promise<v
     throw new Error(err.error || 'Failed to delete room');
   }
 };
+
+export interface GetRoomResponse {
+  room_id: string;
+  room_number: string;
+  owner_id: string;
+}
+
+export const getRoom = async (roomNumber: string): Promise<GetRoomResponse> => {
+  const response = await fetch(`/api/v1/rooms/${roomNumber}`, { method: 'GET' });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || '房间不存在');
+  }
+  return response.json();
+};

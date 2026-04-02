@@ -5,7 +5,7 @@ import { useUser } from '../hooks/useUser'
 import { SettingsModal } from '../components/SettingsModal'
 import { CreateRoomModal } from '../components/CreateRoomModal'
 import { JoinRoomModal } from '../components/JoinRoomModal'
-import { createRoom } from '../api/room'
+import { createRoom, getRoom } from '../api/room'
 
 export default function Home() {
   const { user, loading, updateUserInfo } = useUser()
@@ -15,13 +15,21 @@ export default function Home() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
   const [kickNotice, setKickNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
     try {
-      const notice = sessionStorage.getItem('kick_notice')
-      if (!notice) return
-      sessionStorage.removeItem('kick_notice')
-      setKickNotice(notice)
+      const kick = sessionStorage.getItem('kick_notice')
+      if (kick) {
+        sessionStorage.removeItem('kick_notice')
+        setKickNotice(kick)
+      }
+
+      const home = sessionStorage.getItem('home_notice')
+      if (home) {
+        sessionStorage.removeItem('home_notice')
+        setNotice(home)
+      }
     } catch {
       // ignore
     }
@@ -41,9 +49,17 @@ export default function Home() {
     }
   };
 
-  const handleJoinRoom = (roomNumber: string) => {
-    if (!roomNumber.trim()) return;
-    navigate(`/table?room=${roomNumber.trim()}`);
+  const handleJoinRoom = async (roomNumber: string) => {
+    const rn = roomNumber.trim()
+    if (!rn) return;
+    try {
+      await getRoom(rn)
+      setShowJoinModal(false)
+      navigate(`/table?room=${rn}`)
+    } catch (err: any) {
+      setNotice(err?.message || '房间不存在或已被回收')
+      setShowJoinModal(false)
+    }
   };
 
   return (
@@ -84,6 +100,21 @@ export default function Home() {
           <button
             onClick={() => setKickNotice(null)}
             className="text-red-200/70 hover:text-red-100 transition"
+            aria-label="关闭提示"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {notice && (
+        <div className="mb-4 w-full max-w-md bg-yellow-900/20 border border-yellow-900/40 text-yellow-100 rounded-xl px-4 py-3 flex items-start justify-between gap-3 shadow-lg">
+          <div className="text-sm leading-5">
+            {notice}
+          </div>
+          <button
+            onClick={() => setNotice(null)}
+            className="text-yellow-100/70 hover:text-yellow-100 transition"
             aria-label="关闭提示"
           >
             ✕

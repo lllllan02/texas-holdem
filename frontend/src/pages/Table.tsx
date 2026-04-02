@@ -5,7 +5,7 @@ import { Header } from '../components/Header'
 import { SettingsModal } from '../components/SettingsModal'
 import { useUser } from '../hooks/useUser'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { deleteRoom } from '../api/room'
+import { deleteRoom, getRoom } from '../api/room'
 
 export default function Table() {
   const { user, loading, updateUserInfo } = useUser()
@@ -13,16 +13,37 @@ export default function Table() {
   const navigate = useNavigate()
   const [showSettings, setShowSettings] = useState(false)
   const [isOwner, setIsOwner] = useState(false)
+  const [validatedRoomNumber, setValidatedRoomNumber] = useState<string | null>(null)
+  const [isValidatingRoom, setIsValidatingRoom] = useState(false)
   
   const roomNumber = searchParams.get('room')
   
   // 初始化 WebSocket
-  const { lastMessage, isKicked, error } = useWebSocket(roomNumber, user?.id)
+  const { lastMessage, isKicked, error } = useWebSocket(validatedRoomNumber, user?.id)
 
   useEffect(() => {
     if (!roomNumber) {
       navigate('/')
+      return
     }
+
+    setIsValidatingRoom(true)
+    setValidatedRoomNumber(null)
+    getRoom(roomNumber)
+      .then(() => {
+        setValidatedRoomNumber(roomNumber)
+      })
+      .catch((err: any) => {
+        try {
+          sessionStorage.setItem('home_notice', err?.message || '房间不存在或已被回收')
+        } catch {
+          // ignore
+        }
+        navigate('/')
+      })
+      .finally(() => {
+        setIsValidatingRoom(false)
+      })
   }, [roomNumber, navigate])
 
   // 监听 WebSocket 消息
@@ -62,6 +83,9 @@ export default function Table() {
 
   if (loading) {
     return <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">加载用户信息中...</div>
+  }
+  if (!validatedRoomNumber || isValidatingRoom) {
+    return <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">正在进入房间...</div>
   }
 
   return (

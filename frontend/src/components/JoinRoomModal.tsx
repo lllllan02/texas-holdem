@@ -3,7 +3,7 @@ import { useState } from 'react'
 interface JoinRoomModalProps {
   show: boolean;
   onClose: () => void;
-  onJoin: (roomNumber: string) => void;
+  onJoin: (roomNumber: string) => void | Promise<void>;
 }
 
 export function JoinRoomModal({ show, onClose, onJoin }: JoinRoomModalProps) {

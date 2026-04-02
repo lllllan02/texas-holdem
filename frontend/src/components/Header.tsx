@@ -1,5 +1,6 @@
+import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, User, History, Settings, LogOut } from 'lucide-react'
+import { ArrowLeft, User, History, Settings, LogOut, Copy } from 'lucide-react'
 
 interface HeaderProps {
   userName: string;
@@ -12,6 +13,28 @@ interface HeaderProps {
 }
 
 export function Header({ userName, userAvatar, roomNumber, isOwner, onOpenHistory, onOpenSettings, onDeleteRoom }: HeaderProps) {
+  const [copied, setCopied] = useState(false)
+  const copiedTimerRef = useRef<number | null>(null)
+
+  const copyRoomNumber = async () => {
+    try {
+      await navigator.clipboard.writeText(roomNumber)
+    } catch {
+      const input = document.createElement('input')
+      input.value = roomNumber
+      document.body.appendChild(input)
+      input.select()
+      document.execCommand('copy')
+      document.body.removeChild(input)
+    }
+
+    setCopied(true)
+    if (copiedTimerRef.current) {
+      window.clearTimeout(copiedTimerRef.current)
+    }
+    copiedTimerRef.current = window.setTimeout(() => setCopied(false), 1200)
+  }
+
   return (
     <header className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-10">
       <Link to="/" className="flex items-center text-gray-400 hover:text-white transition">
@@ -19,9 +42,21 @@ export function Header({ userName, userAvatar, roomNumber, isOwner, onOpenHistor
         返回大厅
       </Link>
       <div className="flex items-center gap-3 sm:gap-4">
-        <div className="text-gray-400 text-sm hidden sm:block">
-          房间号: <span className="text-white font-mono">{roomNumber}</span>
-        </div>
+        <button
+          type="button"
+          onClick={copyRoomNumber}
+          className="hidden sm:flex items-center gap-2 text-gray-400 text-sm bg-gray-800/50 px-3 py-1.5 rounded-full border border-gray-700 hover:border-gray-500 hover:text-white transition"
+          title="点击复制房间号"
+        >
+          <span>
+            房间号: <span className="text-white font-mono">{roomNumber}</span>
+          </span>
+          {copied ? (
+            <span className="text-xs text-green-400 font-semibold">已复制</span>
+          ) : (
+            <Copy className="w-4 h-4 text-gray-500" />
+          )}
+        </button>
         <button 
           onClick={onOpenHistory}
           className="flex items-center gap-1.5 text-gray-400 hover:text-white transition bg-gray-800/50 px-3 py-1.5 rounded-full border border-gray-700 hover:border-gray-500"

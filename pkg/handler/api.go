@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -16,21 +16,16 @@ import (
 	"github.com/lllllan02/texas-holdem/pkg/wscore"
 )
 
-// RoomManager 管理所有活跃的房间
-type RoomManager struct {
-	mu    sync.RWMutex
-	rooms map[string]*Room
-}
+const roomIdleRecycleAfter = time.Minute
 
-var globalRoomManager = &RoomManager{
-	rooms: make(map[string]*Room),
-}
+var globalRoomManager = NewRoomManager(roomIdleRecycleAfter)
 
 // RegisterRoutes 注册所有的 HTTP 路由
 func RegisterRoutes(r *gin.Engine) {
 	api := r.Group("/api/v1")
 	{
 		api.POST("/rooms", createRoom)
+		api.GET("/rooms/:room_number", getRoom)
 		api.DELETE("/rooms/:room_number", deleteRoom)
 		
 		// 用户相关接口
@@ -43,6 +38,32 @@ func RegisterRoutes(r *gin.Engine) {
 
 	// WebSocket 升级接口
 	r.GET("/ws/:room_number", serveWs)
+}
+
+type GetRoomResponse struct {
+	RoomID     string `json:"room_id"`
+	RoomNumber string `json:"room_number"`
+	OwnerID    string `json:"owner_id"`
+}
+
+func getRoom(c *gin.Context) {
+	roomNumber := c.Param("room_number")
+	if roomNumber == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "room_number is required"})
+		return
+	}
+
+	room, exists := globalRoomManager.Get(roomNumber)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "room not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, GetRoomResponse{
+		RoomID:     room.ID,
+		RoomNumber: room.RoomNumber,
+		OwnerID:    room.OwnerID,
+	})
 }
 
 // CreateRoomRequest 创建房间的请求体
@@ -86,16 +107,14 @@ func createRoom(c *gin.Context) {
 	}
 
 	// 创建房间
-	room, err := NewRoom(roomID, roomNumber, req.OwnerID, engine, optionsBytes)
+	room, err := NewRoom(roomID, roomNumber, req.OwnerID, engine, optionsBytes, globalRoomManager)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create room: " + err.Error()})
 		return
 	}
 
 	// 保存到全局管理器
-	globalRoomManager.mu.Lock()
-	globalRoomManager.rooms[roomNumber] = room
-	globalRoomManager.mu.Unlock()
+	globalRoomManager.Add(room)
 
 	log.Printf("Room created: [%s] Number: %s, Owner: %s", roomID, roomNumber, req.OwnerID)
 
@@ -115,24 +134,22 @@ func deleteRoom(c *gin.Context) {
 		return
 	}
 
-	globalRoomManager.mu.Lock()
-	room, exists := globalRoomManager.rooms[roomNumber]
+	room, exists := globalRoomManager.Get(roomNumber)
 	if !exists {
-		globalRoomManager.mu.Unlock()
 		c.JSON(http.StatusNotFound, gin.H{"error": "room not found"})
 		return
 	}
 
 	if room.OwnerID != ownerID {
-		globalRoomManager.mu.Unlock()
 		c.JSON(http.StatusForbidden, gin.H{"error": "only owner can delete the room"})
 		return
 	}
 
-	// 停止房间的事件循环
-	room.Stop()
-	delete(globalRoomManager.rooms, roomNumber)
-	globalRoomManager.mu.Unlock()
+	// 从管理器中移除，再停止房间（避免 Stop 过程中触发回调导致死锁）
+	room, _ = globalRoomManager.Delete(roomNumber)
+	if room != nil {
+		room.Stop()
+	}
 
 	log.Printf("Room deleted: Number: %s, Owner: %s", roomNumber, ownerID)
 
@@ -232,9 +249,7 @@ func serveWs(c *gin.Context) {
 	}
 
 	// 查找房间
-	globalRoomManager.mu.RLock()
-	room, exists := globalRoomManager.rooms[roomNumber]
-	globalRoomManager.mu.RUnlock()
+	room, exists := globalRoomManager.Get(roomNumber)
 
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "room not found"})

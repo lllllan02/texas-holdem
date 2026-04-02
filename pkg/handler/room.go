@@ -25,10 +25,13 @@ type Room struct {
 	GameEngine core.GameEngine           `json:"-"` // 挂载的具体游戏引擎实例
 	hub        *wscore.Hub               // WebSocket 事件循环核心
 	clients    map[string]*wscore.Client // 维护 UserID 到 Client 的映射
+	stopped      bool
+
+	manager *RoomManager
 }
 
 // NewRoom 创建一个新的房间实例
-func NewRoom(id, roomNumber, ownerID string, engine core.GameEngine, options []byte) (*Room, error) {
+func NewRoom(id, roomNumber, ownerID string, engine core.GameEngine, options []byte, manager *RoomManager) (*Room, error) {
 	r := &Room{
 		ID:         id,
 		RoomNumber: roomNumber,
@@ -37,6 +40,7 @@ func NewRoom(id, roomNumber, ownerID string, engine core.GameEngine, options []b
 		GameEngine: engine,
 		hub:        wscore.NewHub(),
 		clients:    make(map[string]*wscore.Client),
+		manager:    manager,
 	}
 
 	// 初始化游戏引擎
@@ -95,6 +99,11 @@ var _ wscore.MessageHandler = (*Room)(nil)
 
 // Stop 停止房间并销毁游戏引擎
 func (r *Room) Stop() {
+	if r.stopped {
+		return
+	}
+	r.stopped = true
+
 	// 广播房间解散消息
 	r.Broadcast(MsgTypeRoomDestroy, "owner_deleted", nil)
 	
@@ -106,6 +115,9 @@ func (r *Room) Stop() {
 func (r *Room) OnConnect(client *wscore.Client) {
 	userID := client.GetID()
 	r.clients[userID] = client
+	if r.manager != nil {
+		r.manager.OnRoomActive(r.RoomNumber)
+	}
 
 	// 获取用户信息
 	u := user.GetUserByID(userID)
@@ -137,6 +149,13 @@ func (r *Room) OnDisconnect(client *wscore.Client) {
 		r.GameEngine.OnPlayerLeave(userID)
 	}
 	log.Printf("Room [%s] Client [%s] disconnected", r.ID, userID)
+
+	// 如果房间已无任何连接，启动自动回收计时器
+	if len(r.clients) == 0 {
+		if r.manager != nil {
+			r.manager.OnRoomEmpty(r.RoomNumber)
+		}
+	}
 }
 
 // ClientMessage 用于接收客户端发来的消息
