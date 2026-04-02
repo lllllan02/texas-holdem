@@ -1,5 +1,5 @@
 import { User } from 'lucide-react'
-import { getSeatPosition, getCardsPosition, getBetPosition, getMockPosition } from '../utils'
+import { getSeatPosition, getCardsPosition, getBetPosition, getMockPosition } from './tableUtils'
 
 interface PlayerSeatProps {
   index: number;

@@ -46,6 +46,25 @@ export function SettingsModal({ show, onClose, userName, userAvatar, setUserInfo
     }
   };
 
+  const handleSave = async () => {
+    if (tempUserName.trim() && !isSaving) {
+      setIsSaving(true);
+      try {
+        let finalAvatar = tempAvatar;
+        if (selectedFile) {
+          finalAvatar = await uploadImage(selectedFile);
+        }
+        await setUserInfo(tempUserName.trim(), finalAvatar);
+        onClose();
+      } catch (err) {
+        console.error('Failed to save settings:', err);
+        alert('保存失败，请稍后重试');
+      } finally {
+        setIsSaving(false);
+      }
+    }
+  };
+
   if (!show) return null;
 
   return (
@@ -101,6 +120,11 @@ export function SettingsModal({ show, onClose, userName, userAvatar, setUserInfo
               type="text" 
               value={tempUserName}
               onChange={(e) => setTempUserName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSave();
+                }
+              }}
               placeholder="请输入您的昵称"
               maxLength={12}
               className="bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
@@ -116,24 +140,7 @@ export function SettingsModal({ show, onClose, userName, userAvatar, setUserInfo
             取消
           </button>
           <button 
-            onClick={async () => {
-              if (tempUserName.trim() && !isSaving) {
-                setIsSaving(true);
-                try {
-                  let finalAvatar = tempAvatar;
-                  if (selectedFile) {
-                    finalAvatar = await uploadImage(selectedFile);
-                  }
-                  await setUserInfo(tempUserName.trim(), finalAvatar);
-                  onClose();
-                } catch (err) {
-                  console.error('Failed to save settings:', err);
-                  alert('保存失败，请稍后重试');
-                } finally {
-                  setIsSaving(false);
-                }
-              }
-            }}
+            onClick={handleSave}
             disabled={isSaving}
             className={`px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors shadow-md ${isSaving ? 'bg-blue-800 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500'}`}
           >

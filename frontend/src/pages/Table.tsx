@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 
-import { Header } from './table/components/Header'
+import { Header } from '../components/Header'
 import { SettingsModal } from '../components/SettingsModal'
 import { useUser } from '../hooks/useUser'
 import { useWebSocket } from '../hooks/useWebSocket'

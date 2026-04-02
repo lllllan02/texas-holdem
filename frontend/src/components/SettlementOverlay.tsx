@@ -1,4 +1,4 @@
-import { mockSettlementData } from '../mockData'
+import { mockSettlementData } from './mockData'
 
 interface SettlementOverlayProps {
   gameState: string;

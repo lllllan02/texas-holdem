@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { History, ChevronDown, ChevronUp } from 'lucide-react'
-import { mockHistories } from '../mockData'
+import { mockHistories } from './mockData'
 
 interface HistoryModalProps {
   show: boolean;

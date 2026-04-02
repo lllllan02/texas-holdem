@@ -92,16 +92,6 @@ export default function Home() {
           >
             Join Room
           </button>
-          
-          <div className="mt-6 pt-6 border-t border-gray-700 text-center">
-            <p className="text-sm text-gray-500 mb-4">UI Design Previews</p>
-            <Link 
-              to="/table" 
-              className="text-green-400 hover:text-green-300 underline text-sm"
-            >
-              Preview Poker Table UI
-            </Link>
-          </div>
         </div>
       </div>
 
