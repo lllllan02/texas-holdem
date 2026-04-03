@@ -31,7 +31,7 @@ type Hub struct {
 	unregister chan *Client
 
 	// 广播通道。
-	// 外部通过 Broadcast() 写入，主循环消费后分发给所有活跃客户端，避免阻塞调用方。
+	// 外部通过 BroadcastMessage 写入，主循环消费后分发给所有活跃客户端，避免阻塞调用方。
 	broadcast chan []byte
 
 	// 接收客户端消息的通道。
@@ -151,7 +151,8 @@ func (h *Hub) Unregister(client *Client) {
 	}
 }
 
-// BroadcastMessage 向 Hub 中的所有客户端广播消息
+// BroadcastMessage 向 Hub 内所有活跃客户端广播同一条消息（共享同一 []byte 引用）。
+// 调用返回后请勿再修改 message 指向的底层字节：消息可能仍在 broadcast 或各 Client.send 队列中排队。
 func (h *Hub) BroadcastMessage(message []byte) {
 	select {
 	case h.broadcast <- message:

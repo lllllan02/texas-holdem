@@ -32,8 +32,8 @@ type Client struct {
 	send chan []byte
 
 	// 优雅关闭机制
-	closeCh   chan struct{} // 保证并发错误（如心跳超时、读写错误）时，向 Hub 的注销请求只发送一次，防止死锁。
-	closeOnce sync.Once     // Hub 确认注销后关闭的信号通道，WritePump 收到信号后退出循环并断开底层连接。
+	closeCh   chan struct{} // Hub 在 removeClient 中 close，通知 WritePump 发送 Close 帧并退出。
+	closeOnce sync.Once     // 保证 Close 只向 Hub.unregister 投递一次，避免重复注销。
 
 	closePayloadMu sync.Mutex
 	closePayload   []byte // 可选：WebSocket Close 帧 payload（用于“顶号”等有原因的断开）
@@ -43,7 +43,8 @@ func (c *Client) GetID() string {
 	return c.id
 }
 
-// SendMessage 安全地向客户端发送消息
+// SendMessage 非阻塞地将 message 写入发送队列。
+// 调用返回后请勿再修改 message 底层数据，直至该连接已消费或已断开（与广播相同约定）。
 func (c *Client) SendMessage(message []byte) {
 	select {
 	case c.send <- message:
@@ -170,7 +171,9 @@ func (c *Client) WritePump() {
 			if err != nil {
 				return
 			}
-			w.Write(message)
+			if _, err := w.Write(message); err != nil {
+				return
+			}
 
 			// 批量排空队列中积压的消息
 			n := len(c.send)
@@ -187,7 +190,9 @@ func (c *Client) WritePump() {
 				if err != nil {
 					return
 				}
-				w.Write(<-c.send)
+				if _, err := w.Write(<-c.send); err != nil {
+					return
+				}
 			}
 
 			if err := w.Close(); err != nil {
