@@ -9,6 +9,7 @@ type StateUpdateSnapshot struct {
 	// --- 基础与牌桌信息 ---
 	HandCount  int `json:"hand_count"`  // 当前是第几局游戏
 	ButtonSeat int `json:"button_seat"` // 庄家 (Button) 所在的座位号
+	MaxPlayers int `json:"max_players"` // 房间最大玩家数（座位数）
 
 	// --- 局内状态 (如果 stage == WAITING，这些字段通常为默认值) ---
 	Stage              HandStage        `json:"stage"`                      // 当前游戏阶段 (如 PREFLOP, FLOP 等)
@@ -111,6 +112,7 @@ func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 	snap := StateUpdateSnapshot{
 		HandCount:  len(t.Histories),
 		ButtonSeat: t.ButtonSeat,
+		MaxPlayers: len(t.Seats),
 		IsPaused:   t.IsPaused,
 		Players:    make([]PlayerSnapshot, 0),
 		Histories:  t.Histories,
