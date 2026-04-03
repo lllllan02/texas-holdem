@@ -81,6 +81,13 @@ func (m *RoomManager) OnRoomEmpty(roomNumber string) {
 	}
 
 	timer := time.AfterFunc(m.recycleAfter, func() {
+		// 计时器已触发，先从 idleTimers 摘除登记。
+		// 否则若后续 Execute 内因又有连接而提前 return，映射里仍残留已触发的 timer，
+		// OnRoomEmpty 会误判「已有计时器」而不再调度新一轮回收。
+		m.mu.Lock()
+		delete(m.idleTimers, roomNumber)
+		m.mu.Unlock()
+
 		// Timer 回调在独立 goroutine：不持 manager 锁，避免和 WS/HTTP 互相等待
 		room.Execute(func() {
 			// 在房间 Hub 主循环内确认仍为空，避免误回收
