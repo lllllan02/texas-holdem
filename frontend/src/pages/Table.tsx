@@ -14,6 +14,9 @@ interface GameLog {
   time: string;
   text: string;
   type: 'system' | 'action' | 'chat';
+  senderId?: string;
+  senderName?: string;
+  senderAvatar?: string;
 }
 
 export default function Table() {
@@ -38,10 +41,13 @@ export default function Table() {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [logs])
   
+  const [chatInput, setChatInput] = useState('')
+  
   const roomNumber = searchParams.get('room')
   
   // 初始化 WebSocket
-  const { lastMessage, isKicked, error, sendMessage } = useWebSocket(validatedRoomNumber, user?.id)
+  const { messageQueue, isKicked, error, sendMessage } = useWebSocket(validatedRoomNumber, user?.id)
+  const processedMessageIndexRef = useRef(0)
 
   useEffect(() => {
     if (!roomNumber) {
@@ -70,106 +76,144 @@ export default function Table() {
 
   // 监听 WebSocket 消息
   useEffect(() => {
-    if (!lastMessage) return;
+    while (processedMessageIndexRef.current < messageQueue.length) {
+      const lastMessage = messageQueue[processedMessageIndexRef.current];
+      processedMessageIndexRef.current++;
 
-    if (lastMessage.type === 'room.welcome') {
-      // 判断当前用户是否是房主
-      setIsOwner(lastMessage.payload.owner_id === user?.id);
-      setLogs(prev => [...prev, {
-        id: Date.now() + '-' + Math.random(),
-        time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
-        text: `欢迎来到房间: ${lastMessage.payload.room_number}`,
-        type: 'system' as const
-      }].slice(-100));
-    } else if (lastMessage.type === 'room.destroyed') {
-      if (!isOwner) {
-        try {
-          sessionStorage.setItem('home_notice', '房间已被房主解散');
-        } catch {
-          // ignore
+      if (lastMessage.type === 'room.welcome') {
+        // 判断当前用户是否是房主
+        setIsOwner(lastMessage.payload.owner_id === user?.id);
+        setLogs(prev => [...prev, {
+          id: Date.now() + '-' + Math.random(),
+          time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+          text: `欢迎来到房间: ${lastMessage.payload.room_number}`,
+          type: 'system' as const
+        }].slice(-100));
+      } else if (lastMessage.type === 'room.destroyed') {
+        if (!isOwner) {
+          try {
+            sessionStorage.setItem('home_notice', '房间已被房主解散');
+          } catch {
+            // ignore
+          }
         }
-      }
-      navigate('/');
-    } else if (lastMessage.type === 'texas.state_update') {
-      const snap = lastMessage.payload as StateUpdateSnapshot;
-      const prevSnap = prevGameStateRef.current;
-      setGameState(snap);
-
-      const reason = lastMessage.reason;
-      if (reason) {
-        let logText = '';
+        navigate('/');
+      } else if (lastMessage.type === 'room.chat') {
+        const chatPayload = lastMessage.payload;
+        setLogs(prev => [...prev, {
+          id: Date.now() + '-' + Math.random(),
+          time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+          text: chatPayload.message,
+          type: 'chat' as const,
+          senderId: chatPayload.user_id,
+          senderName: chatPayload.user_name,
+          senderAvatar: chatPayload.avatar
+        }].slice(-100));
+      } else if (lastMessage.type === 'room.player_join') {
+        const p = lastMessage.payload;
+        const isMe = p.user_id === user?.id;
+        setLogs(prev => [...prev, {
+          id: Date.now() + '-' + Math.random(),
+          time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+          text: isMe ? '你进入了房间' : `玩家 [${p.user_name}] 进入了房间`,
+          type: 'system' as const
+        }].slice(-100));
+        // 如果是自己加入房间，此时可能还没有 gameState，尝试从 payload 中获取或等待 state_update
+      } else if (lastMessage.type === 'room.player_leave') {
+        const p = lastMessage.payload;
+        setLogs(prev => [...prev, {
+          id: Date.now() + '-' + Math.random(),
+          time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+          text: `玩家 [${p.user_name}] 离开了房间`,
+          type: 'system' as const
+        }].slice(-100));
+      } else if (lastMessage.type === 'texas.state_update') {
+        const snap = lastMessage.payload as StateUpdateSnapshot;
+        const prevSnap = prevGameStateRef.current;
         
-        const getNewPlayerName = () => {
-          const newP = snap.players?.find(p => !prevSnap?.players?.find(old => old.id === p.id));
-          return newP ? newP.name : '某玩家';
-        };
-        
-        const getRemovedPlayerName = () => {
-          const oldP = prevSnap?.players?.find(old => !snap.players?.find(p => p.id === old.id));
-          return oldP ? oldP.name : '某玩家';
-        };
+        // 只有在第一次收到 state_update，或者状态确实有变化时才更新
+        setGameState(snap);
 
-        const getReadyPlayerName = (isReady: boolean) => {
-          const targetState = isReady ? 'ready' : 'waiting';
-          const p = snap.players?.find(p => {
-            const oldP = prevSnap?.players?.find(old => old.id === p.id);
-            return p.state === targetState && oldP?.state !== targetState;
-          });
-          return p ? p.name : '某玩家';
-        };
+        const reason = lastMessage.reason;
+        if (reason) {
+          let logText = '';
+          
+          const getNewPlayerName = () => {
+            const newP = snap.players?.find(p => !prevSnap?.players?.find(old => old.id === p.id));
+            return newP ? newP.name : '某玩家';
+          };
+          
+          const getRemovedPlayerName = () => {
+            const oldP = prevSnap?.players?.find(old => !snap.players?.find(p => p.id === old.id));
+            return oldP ? oldP.name : '某玩家';
+          };
 
-        const getOfflineChangedPlayerName = (toOffline: boolean) => {
-          const p = snap.players?.find(p => {
-            const oldP = prevSnap?.players?.find(old => old.id === p.id);
-            return p.is_offline === toOffline && oldP?.is_offline !== toOffline;
-          });
-          return p ? p.name : '某玩家';
-        };
+          const getReadyPlayerName = (isReady: boolean) => {
+            const targetState = isReady ? 'ready' : 'waiting';
+            const p = snap.players?.find(p => {
+              const oldP = prevSnap?.players?.find(old => old.id === p.id);
+              return p.state === targetState && oldP?.state !== targetState;
+            });
+            return p ? p.name : '某玩家';
+          };
 
-        switch (reason) {
-          case 'player_joined': logText = '你进入了房间'; break;
-          case 'player_left': logText = `${getOfflineChangedPlayerName(true)} 离开了房间`; break;
-          case 'player_reconnected': logText = `${getOfflineChangedPlayerName(false)} 重新连接`; break;
-          case 'sit_down': logText = `${getNewPlayerName()} 坐下了`; break;
-          case 'stand_up': logText = `${getRemovedPlayerName()} 站起了`; break;
-          case 'ready': logText = `${getReadyPlayerName(true)} 已准备`; break;
-          case 'cancel_ready': logText = `${getReadyPlayerName(false)} 取消了准备`; break;
-          case 'deal_hole_cards': logText = `第 ${snap.hand_count + 1} 局游戏开始，正在发牌...`; break;
-          case 'player_action': 
-            if (snap.last_action) {
-              const p = snap.players?.find(p => p.id === snap.last_action?.player_id);
-              const pName = p ? p.name : '某玩家';
-              const actionMap: Record<string, string> = {
-                'fold': '弃牌', 'check': '过牌', 'call': '跟注', 'bet': '下注', 'raise': '加注', 'allin': 'All-in'
+          const getOfflineChangedPlayerName = (toOffline: boolean) => {
+            const p = snap.players?.find(p => {
+              const oldP = prevSnap?.players?.find(old => old.id === p.id);
+              return p.is_offline === toOffline && oldP?.is_offline !== toOffline;
+            });
+            return p ? p.name : '某玩家';
+          };
+
+          switch (reason) {
+            case 'player_joined': 
+              // 忽略 player_joined 的日志，因为 room.player_join 已经处理了
+              break;
+            case 'player_left': 
+              // 忽略 player_left 的日志，因为 room.player_leave 已经处理了
+              break;
+            case 'player_reconnected': logText = `${getOfflineChangedPlayerName(false)} 重新连接`; break;
+            case 'sit_down': logText = `${getNewPlayerName()} 坐下了`; break;
+            case 'stand_up': logText = `${getRemovedPlayerName()} 站起了`; break;
+            case 'ready': logText = `${getReadyPlayerName(true)} 已准备`; break;
+            case 'cancel_ready': logText = `${getReadyPlayerName(false)} 取消了准备`; break;
+            case 'deal_hole_cards': logText = `第 ${snap.hand_count + 1} 局游戏开始，正在发牌...`; break;
+            case 'player_action': 
+              if (snap.last_action) {
+                const p = snap.players?.find(p => p.id === snap.last_action?.player_id);
+                const pName = p ? p.name : '某玩家';
+                const actionMap: Record<string, string> = {
+                  'fold': '弃牌', 'check': '过牌', 'call': '跟注', 'bet': '下注', 'raise': '加注', 'allin': 'All-in'
+                };
+                const actName = actionMap[snap.last_action.action || ''] || snap.last_action.action;
+                logText = `${pName} ${actName} ${snap.last_action.amount ? snap.last_action.amount : ''}`;
+              }
+              break;
+            case 'next_stage': 
+              const stageMap: Record<string, string> = {
+                'PREFLOP': '翻牌前', 'FLOP': '翻牌圈', 'TURN': '转牌圈', 'RIVER': '河牌圈', 'SHOWDOWN': '摊牌'
               };
-              const actName = actionMap[snap.last_action.action || ''] || snap.last_action.action;
-              logText = `${pName} ${actName} ${snap.last_action.amount ? snap.last_action.amount : ''}`;
-            }
-            break;
-          case 'next_stage': 
-            const stageMap: Record<string, string> = {
-              'PREFLOP': '翻牌前', 'FLOP': '翻牌圈', 'TURN': '转牌圈', 'RIVER': '河牌圈', 'SHOWDOWN': '摊牌'
-            };
-            logText = `进入 ${stageMap[snap.stage] || snap.stage} 阶段`; 
-            break;
-          case 'showdown': logText = '进入摊牌结算'; break;
-          case 'hand_finished': logText = `第 ${snap.hand_count} 局游戏结束`; break;
-          case 'early_finish': logText = `其他玩家均已弃牌，本局提前结束`; break;
+              logText = `进入 ${stageMap[snap.stage] || snap.stage} 阶段`; 
+              break;
+            case 'showdown': logText = '进入摊牌结算'; break;
+            case 'hand_finished': logText = `第 ${snap.hand_count} 局游戏结束`; break;
+            case 'early_finish': logText = `其他玩家均已弃牌，本局提前结束`; break;
+          }
+          
+          if (logText) {
+            setLogs(prev => [...prev, {
+              id: Date.now() + '-' + Math.random(),
+              time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+              text: logText,
+              type: 'action' as const
+            }].slice(-100));
+          }
         }
         
-        if (logText) {
-          setLogs(prev => [...prev, {
-            id: Date.now() + '-' + Math.random(),
-            time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
-            text: logText,
-            type: 'action' as const
-          }].slice(-100));
-        }
+        prevGameStateRef.current = snap;
       }
-      
-      prevGameStateRef.current = snap;
     }
-  }, [lastMessage, user?.id, navigate, isOwner]);
+  }, [messageQueue, user?.id, navigate, isOwner]);
 
   useEffect(() => {
     if (!isKicked) return;
@@ -215,6 +259,12 @@ export default function Table() {
     sendMessage('texas.cancel', {});
   };
 
+  const handleSendChat = () => {
+    if (!chatInput.trim()) return;
+    sendMessage('room.chat', { message: chatInput.trim() });
+    setChatInput('');
+  };
+
   if (loading) {
     return <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">加载用户信息中...</div>
   }
@@ -253,10 +303,10 @@ export default function Table() {
             ) : (
               <>
                 {/* 座位渲染 */}
-                {Array.from({ length: gameState.max_players }).map((_, index) => {
+                {Array.from({ length: gameState.max_players || 9 }).map((_, index) => {
                   const player = gameState.players?.find(p => p.seat_number === index);
                   const isMySeat = player?.id === user?.id;
-                  const position = getSeatPosition(gameState.max_players, index);
+                  const position = getSeatPosition(gameState.max_players || 9, index);
 
                   return (
                     <div 
@@ -337,16 +387,47 @@ export default function Table() {
               </div>
               
               {/* 日志列表 */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                {logs.map(log => (
-                  <div key={log.id} className="text-xs text-gray-400">
-                    <span className="text-gray-500 mr-2">[{log.time}]</span>
-                    <span className={log.type === 'system' ? 'text-blue-400' : 'text-green-400'}>
-                      {log.type === 'system' ? '[系统]' : '[动作]'}
-                    </span>
-                    {' '}{log.text}
-                  </div>
-                ))}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {logs.map(log => {
+                  if (log.type === 'system' || log.type === 'action') {
+                    return (
+                      <div key={log.id} className="flex justify-center">
+                        <span className="text-[11px] bg-gray-800/80 text-gray-400 px-3 py-1 rounded-full shadow-sm">
+                          [{log.time}] {log.text}
+                        </span>
+                      </div>
+                    );
+                  }
+
+                  // 聊天气泡
+                  const isMe = log.senderId === user?.id;
+                  return (
+                    <div key={log.id} className={`flex w-full gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'} items-start`}>
+                      {/* 头像 */}
+                      <div className="w-8 h-8 rounded-full bg-gray-700 flex-shrink-0 flex items-center justify-center overflow-hidden border border-gray-600 shadow-sm mt-1">
+                        {log.senderAvatar ? (
+                          <img src={log.senderAvatar} alt={log.senderName} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-xs text-gray-400 font-bold">{log.senderName?.[0]?.toUpperCase()}</span>
+                        )}
+                      </div>
+
+                      {/* 消息内容区 */}
+                      <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[75%]`}>
+                        <span className="text-[10px] text-gray-500 mb-1 mx-1">
+                          {log.senderName} {log.time}
+                        </span>
+                        <div className={`px-3 py-2 rounded-2xl text-sm shadow-md ${
+                          isMe 
+                            ? 'bg-blue-600 text-white rounded-tr-sm' 
+                            : 'bg-gray-700 text-gray-200 rounded-tl-sm'
+                        }`}>
+                          {log.text}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
                 <div ref={logsEndRef} />
               </div>
 
@@ -355,12 +436,15 @@ export default function Table() {
                 <input 
                   type="text" 
                   placeholder="输入聊天内容..." 
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSendChat()}
                   className="flex-1 bg-gray-900 text-white text-sm px-3 py-1.5 rounded-l-md outline-none border border-gray-700 focus:border-gray-500 transition-colors" 
-                  disabled 
                 />
                 <button 
+                  onClick={handleSendChat}
+                  disabled={!chatInput.trim()}
                   className="bg-blue-600 hover:bg-blue-500 px-4 py-1.5 rounded-r-md text-sm text-white font-bold disabled:opacity-50 transition-colors" 
-                  disabled
                 >
                   发送
                 </button>

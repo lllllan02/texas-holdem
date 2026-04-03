@@ -9,9 +9,26 @@ const (
 	MsgTypeWelcome     = "room.welcome"   // 欢迎加入房间（返回分配的 UserID 等）
 	MsgTypeGamePaused  = "room.paused"    // 游戏已暂停
 	MsgTypeRoomDestroy = "room.destroyed" // 房间已解散
+	MsgTypeChat        = "room.chat"      // 房间内聊天消息
+	MsgTypePlayerJoin  = "room.player_join"  // 玩家加入房间
+	MsgTypePlayerLeave = "room.player_leave" // 玩家离开房间
 )
 
 // 房间级消息 Payload 结构体
+
+// PlayerEventPayload 玩家进出房间的消息体
+type PlayerEventPayload struct {
+	UserID   string `json:"user_id"`
+	UserName string `json:"user_name"`
+}
+
+// ChatPayload 聊天消息体
+type ChatPayload struct {
+	UserID   string `json:"user_id"`
+	UserName string `json:"user_name"`
+	Avatar   string `json:"avatar"`
+	Message  string `json:"message"`
+}
 
 // WelcomePayload 欢迎加入房间的消息体
 type WelcomePayload struct {

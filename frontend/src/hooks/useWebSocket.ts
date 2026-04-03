@@ -9,7 +9,7 @@ interface Envelope {
 export const useWebSocket = (roomNumber: string | null, userId: string | undefined) => {
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastMessage, setLastMessage] = useState<Envelope | null>(null);
+  const [messageQueue, setMessageQueue] = useState<Envelope[]>([]);
   const [isKicked, setIsKicked] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -35,7 +35,7 @@ export const useWebSocket = (roomNumber: string | null, userId: string | undefin
       try {
         const message: Envelope = JSON.parse(event.data);
         console.log('Received WS Message:', message);
-        setLastMessage(message);
+        setMessageQueue(prev => [...prev, message]);
       } catch (err) {
         console.error('Failed to parse WS message:', event.data, err);
       }
@@ -86,7 +86,7 @@ export const useWebSocket = (roomNumber: string | null, userId: string | undefin
     isConnected,
     isKicked,
     error,
-    lastMessage,
+    messageQueue,
     sendMessage,
     reconnect: connect,
   };

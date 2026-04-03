@@ -124,6 +124,11 @@ func (r *Room) OnConnect(client *wscore.Client) {
 	u := user.GetUserByID(userID)
 	r.Users[userID] = u
 
+	r.Broadcast(MsgTypePlayerJoin, "", PlayerEventPayload{
+		UserID:   userID,
+		UserName: u.Nickname,
+	})
+
 	r.SendTo(userID, MsgTypeWelcome, "", WelcomePayload{
 		RoomID:     r.ID,
 		RoomNumber: r.RoomNumber,
@@ -143,7 +148,11 @@ func (r *Room) OnDisconnect(client *wscore.Client) {
 	delete(r.clients, userID)
 
 	// 如果用户在房间内，通知游戏引擎玩家离开
-	if _, ok := r.Users[userID]; ok {
+	if u, ok := r.Users[userID]; ok {
+		r.Broadcast(MsgTypePlayerLeave, "", PlayerEventPayload{
+			UserID:   userID,
+			UserName: u.Nickname,
+		})
 		delete(r.Users, userID)
 		r.GameEngine.OnPlayerLeave(userID)
 	}
@@ -180,6 +189,9 @@ func (r *Room) OnMessage(client *wscore.Client, message []byte) {
 		return
 	case MsgTypeResumeGame:
 		r.handleResumeGame(userID)
+		return
+	case MsgTypeChat:
+		r.handleChat(userID, msg.Payload)
 		return
 	}
 
@@ -221,5 +233,34 @@ func (r *Room) handleResumeGame(userID string) {
 	r.Broadcast(MsgTypeGamePaused, "user_resume", GamePausedPayload{
 		IsPaused: false,
 		UserID:   userID,
+	})
+}
+
+func (r *Room) handleChat(userID string, payload []byte) {
+	// 1. 解析前端传来的聊天内容
+	var chatReq struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(payload, &chatReq); err != nil {
+		r.SendTo(userID, core.MsgTypeError, "", core.ErrorPayload{Error: "invalid chat payload"})
+		return
+	}
+
+	if chatReq.Message == "" {
+		return
+	}
+
+	// 2. 获取发送者的用户信息
+	u, ok := r.Users[userID]
+	if !ok {
+		return
+	}
+
+	// 3. 组装并广播聊天消息给房间内的所有人
+	r.Broadcast(MsgTypeChat, "", ChatPayload{
+		UserID:   userID,
+		UserName: u.Nickname,
+		Avatar:   u.Avatar,
+		Message:  chatReq.Message,
 	})
 }
