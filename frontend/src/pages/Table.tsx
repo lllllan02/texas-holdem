@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 
 import { Header } from '../components/Header'
@@ -8,6 +8,13 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { deleteRoom, getRoom } from '../api/room'
 import type { StateUpdateSnapshot } from '../types/game'
 import { getSeatPosition } from '../components/tableUtils'
+
+interface GameLog {
+  id: string;
+  time: string;
+  text: string;
+  type: 'system' | 'action' | 'chat';
+}
 
 export default function Table() {
   const { user, loading, updateUserInfo } = useUser()
@@ -20,6 +27,16 @@ export default function Table() {
   const [gameState, setGameState] = useState<StateUpdateSnapshot | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [logs, setLogs] = useState<GameLog[]>([
+    { id: 'init-1', time: new Date().toLocaleTimeString('zh-CN', { hour12: false }), text: '欢迎来到德州扑克房间', type: 'system' },
+    { id: 'init-2', time: new Date().toLocaleTimeString('zh-CN', { hour12: false }), text: '等待玩家加入和准备...', type: 'system' }
+  ])
+  const logsEndRef = useRef<HTMLDivElement>(null)
+  const prevGameStateRef = useRef<StateUpdateSnapshot | null>(null)
+
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [logs])
   
   const roomNumber = searchParams.get('room')
   
@@ -58,6 +75,12 @@ export default function Table() {
     if (lastMessage.type === 'room.welcome') {
       // 判断当前用户是否是房主
       setIsOwner(lastMessage.payload.owner_id === user?.id);
+      setLogs(prev => [...prev, {
+        id: Date.now() + '-' + Math.random(),
+        time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+        text: `欢迎来到房间: ${lastMessage.payload.room_number}`,
+        type: 'system' as const
+      }].slice(-100));
     } else if (lastMessage.type === 'room.destroyed') {
       if (!isOwner) {
         try {
@@ -68,7 +91,83 @@ export default function Table() {
       }
       navigate('/');
     } else if (lastMessage.type === 'texas.state_update') {
-      setGameState(lastMessage.payload as StateUpdateSnapshot);
+      const snap = lastMessage.payload as StateUpdateSnapshot;
+      const prevSnap = prevGameStateRef.current;
+      setGameState(snap);
+
+      const reason = lastMessage.reason;
+      if (reason) {
+        let logText = '';
+        
+        const getNewPlayerName = () => {
+          const newP = snap.players?.find(p => !prevSnap?.players?.find(old => old.id === p.id));
+          return newP ? newP.name : '某玩家';
+        };
+        
+        const getRemovedPlayerName = () => {
+          const oldP = prevSnap?.players?.find(old => !snap.players?.find(p => p.id === old.id));
+          return oldP ? oldP.name : '某玩家';
+        };
+
+        const getReadyPlayerName = (isReady: boolean) => {
+          const targetState = isReady ? 'ready' : 'waiting';
+          const p = snap.players?.find(p => {
+            const oldP = prevSnap?.players?.find(old => old.id === p.id);
+            return p.state === targetState && oldP?.state !== targetState;
+          });
+          return p ? p.name : '某玩家';
+        };
+
+        const getOfflineChangedPlayerName = (toOffline: boolean) => {
+          const p = snap.players?.find(p => {
+            const oldP = prevSnap?.players?.find(old => old.id === p.id);
+            return p.is_offline === toOffline && oldP?.is_offline !== toOffline;
+          });
+          return p ? p.name : '某玩家';
+        };
+
+        switch (reason) {
+          case 'player_joined': logText = '你进入了房间'; break;
+          case 'player_left': logText = `${getOfflineChangedPlayerName(true)} 离开了房间`; break;
+          case 'player_reconnected': logText = `${getOfflineChangedPlayerName(false)} 重新连接`; break;
+          case 'sit_down': logText = `${getNewPlayerName()} 坐下了`; break;
+          case 'stand_up': logText = `${getRemovedPlayerName()} 站起了`; break;
+          case 'ready': logText = `${getReadyPlayerName(true)} 已准备`; break;
+          case 'cancel_ready': logText = `${getReadyPlayerName(false)} 取消了准备`; break;
+          case 'deal_hole_cards': logText = `第 ${snap.hand_count + 1} 局游戏开始，正在发牌...`; break;
+          case 'player_action': 
+            if (snap.last_action) {
+              const p = snap.players?.find(p => p.id === snap.last_action?.player_id);
+              const pName = p ? p.name : '某玩家';
+              const actionMap: Record<string, string> = {
+                'fold': '弃牌', 'check': '过牌', 'call': '跟注', 'bet': '下注', 'raise': '加注', 'allin': 'All-in'
+              };
+              const actName = actionMap[snap.last_action.action || ''] || snap.last_action.action;
+              logText = `${pName} ${actName} ${snap.last_action.amount ? snap.last_action.amount : ''}`;
+            }
+            break;
+          case 'next_stage': 
+            const stageMap: Record<string, string> = {
+              'PREFLOP': '翻牌前', 'FLOP': '翻牌圈', 'TURN': '转牌圈', 'RIVER': '河牌圈', 'SHOWDOWN': '摊牌'
+            };
+            logText = `进入 ${stageMap[snap.stage] || snap.stage} 阶段`; 
+            break;
+          case 'showdown': logText = '进入摊牌结算'; break;
+          case 'hand_finished': logText = `第 ${snap.hand_count} 局游戏结束`; break;
+          case 'early_finish': logText = `其他玩家均已弃牌，本局提前结束`; break;
+        }
+        
+        if (logText) {
+          setLogs(prev => [...prev, {
+            id: Date.now() + '-' + Math.random(),
+            time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+            text: logText,
+            type: 'action' as const
+          }].slice(-100));
+        }
+      }
+      
+      prevGameStateRef.current = snap;
     }
   }, [lastMessage, user?.id, navigate, isOwner]);
 
@@ -228,18 +327,53 @@ export default function Table() {
       </div>
 
       {/* 右侧/下方：侧边栏 (聊天与操作) */}
-      <aside className="w-full lg:w-80 xl:w-96 bg-gray-800 border-t lg:border-t-0 lg:border-l border-gray-700 flex flex-col z-30 h-auto lg:h-screen p-4 items-center justify-center text-gray-500">
-        {gameState && (
-          <div className="w-full space-y-4">
-            {/* 操作区域 */}
-            <div className="bg-gray-900 p-4 rounded-lg shadow-inner">
-              <h3 className="text-lg font-bold text-white mb-4">操作栏</h3>
+      <aside className="w-full lg:w-80 xl:w-96 bg-gray-800 border-t lg:border-t-0 lg:border-l border-gray-700 flex flex-col z-30 h-[40vh] lg:h-screen">
+        {gameState ? (
+          <>
+            {/* 上方：游戏日志和聊天内容 (约占 2/3) */}
+            <div className="flex-1 flex flex-col bg-gray-900 mx-4 mt-4 mb-2 rounded-lg shadow-inner overflow-hidden">
+              <div className="bg-gray-800 px-4 py-2 border-b border-gray-700 font-bold text-sm text-gray-300 flex justify-between items-center">
+                <span>游戏记录</span>
+              </div>
               
+              {/* 日志列表 */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                {logs.map(log => (
+                  <div key={log.id} className="text-xs text-gray-400">
+                    <span className="text-gray-500 mr-2">[{log.time}]</span>
+                    <span className={log.type === 'system' ? 'text-blue-400' : 'text-green-400'}>
+                      {log.type === 'system' ? '[系统]' : '[动作]'}
+                    </span>
+                    {' '}{log.text}
+                  </div>
+                ))}
+                <div ref={logsEndRef} />
+              </div>
+
+              {/* 聊天输入框 */}
+              <div className="p-2 bg-gray-800 border-t border-gray-700 flex">
+                <input 
+                  type="text" 
+                  placeholder="输入聊天内容..." 
+                  className="flex-1 bg-gray-900 text-white text-sm px-3 py-1.5 rounded-l-md outline-none border border-gray-700 focus:border-gray-500 transition-colors" 
+                  disabled 
+                />
+                <button 
+                  className="bg-blue-600 hover:bg-blue-500 px-4 py-1.5 rounded-r-md text-sm text-white font-bold disabled:opacity-50 transition-colors" 
+                  disabled
+                >
+                  发送
+                </button>
+              </div>
+            </div>
+
+            {/* 下方：操作区域 (约占 1/3) */}
+            <div className="shrink-0 bg-gray-900 mx-4 mt-2 mb-4 p-4 rounded-lg shadow-inner min-h-[160px] flex flex-col justify-center">
               {(() => {
                 const myPlayer = gameState.players?.find(p => p.id === user?.id);
                 
                 if (!myPlayer) {
-                  return <div className="text-sm text-gray-400">请先在牌桌上找个空位坐下</div>;
+                  return <div className="text-sm text-gray-400 text-center">请先在牌桌上找个空位坐下</div>;
                 }
 
                 if (gameState.stage === 'WAITING') {
@@ -247,7 +381,7 @@ export default function Table() {
                     return (
                       <button 
                         onClick={handleCancelReady}
-                        className="w-full py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg transition-colors"
+                        className="w-full py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg transition-colors shadow-lg"
                       >
                         取消准备
                       </button>
@@ -256,7 +390,7 @@ export default function Table() {
                     return (
                       <button 
                         onClick={handleReady}
-                        className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg transition-colors"
+                        className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg transition-colors shadow-lg"
                       >
                         准备
                       </button>
@@ -264,17 +398,23 @@ export default function Table() {
                   }
                 }
 
-                return <div className="text-sm text-gray-400">游戏进行中...</div>;
+                // 游戏进行中的操作按钮占位
+                return (
+                  <div className="grid grid-cols-2 gap-3">
+                    <button className="py-3 bg-gray-700 text-white font-bold rounded-lg opacity-50 cursor-not-allowed shadow-md">弃牌 (Fold)</button>
+                    <button className="py-3 bg-gray-700 text-white font-bold rounded-lg opacity-50 cursor-not-allowed shadow-md">过牌 (Check)</button>
+                    <button className="py-3 bg-gray-700 text-white font-bold rounded-lg opacity-50 cursor-not-allowed shadow-md">跟注 (Call)</button>
+                    <button className="py-3 bg-blue-600 text-white font-bold rounded-lg opacity-50 cursor-not-allowed shadow-md">加注 (Raise)</button>
+                  </div>
+                );
               })()}
             </div>
-            
-            {/* 聊天占位符 */}
-            <div className="bg-gray-900 p-4 rounded-lg shadow-inner flex-1 min-h-[200px] flex items-center justify-center">
-              聊天区域占位符
-            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-gray-500">
+            等待游戏数据...
           </div>
         )}
-        {!gameState && <div>操作栏与聊天占位符</div>}
       </aside>
 
       {/* 解散房间确认弹窗 */}
