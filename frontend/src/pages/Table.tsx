@@ -7,7 +7,7 @@ import { PlayingCard } from '../components/PlayingCard'
 import { useUser } from '../hooks/useUser'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { deleteRoom, getRoom } from '../api/room'
-import type { StateUpdateSnapshot, CountdownPayload, TurnNotificationPayload } from '../types/game'
+import type { StateUpdateSnapshot, CountdownPayload, TurnNotificationPayload, HoleCardsPayload } from '../types/game'
 import { getSeatPosition } from '../components/tableUtils'
 
 interface GameLog {
@@ -382,6 +382,19 @@ export default function Table() {
             setBetAmount(payload.action_details.min_raise || 0);
           }
         }
+      } else if (lastMessage.type === 'texas.hole_cards') {
+        const payload = lastMessage.payload as HoleCardsPayload;
+        setGameState(prev => {
+          if (!prev) return prev;
+          const newSnap = {
+            ...prev,
+            players: prev.players.map(p => 
+              p.id === user?.id ? { ...p, hole_cards: payload.cards } : p
+            )
+          };
+          prevGameStateRef.current = newSnap;
+          return newSnap;
+        });
       }
     }
   }, [messageQueue, user?.id, navigate, isOwner]);

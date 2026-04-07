@@ -80,6 +80,11 @@ type CountdownPayload struct {
 	Seconds  int    `json:"seconds"`             // 剩余秒数
 }
 
+// HoleCardsPayload 私发底牌载荷
+type HoleCardsPayload struct {
+	Cards []Card `json:"cards"`
+}
+
 // 客户端 -> 服务端：玩家操作
 
 // ClientActionPayload 客户端发给服务端的操作指令载荷

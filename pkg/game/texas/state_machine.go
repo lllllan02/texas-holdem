@@ -100,14 +100,13 @@ func (t *Table) startNewHand() error {
 	// 8. 广播公共快照给所有人（包括旁观者），让他们知道游戏开始了，同时触发 Room 层清空上一局的历史日志
 	t.messenger.Broadcast(MsgTypeStateUpdate, ReasonDealHoleCards, t.BuildPublicSnapshot())
 
-	// 9. 给每个在座玩家私发专属快照（包含他们自己的底牌）
+	// 9. 给每个在座玩家私发底牌
 	for _, seatIdx := range t.CurrentHand.ActionOrder {
 		player := t.Seats[seatIdx]
-		// 生成专属快照，其中会包含该玩家的 HoleCards，其他人的 HoleCards 为 nil
-		snap := t.BuildPersonalSnapshot(player.User.ID)
 		log.Printf("TexasEngine: Dealt hole cards to Player [%s]", player.User.ID)
-		// reason 留空，前端收到后只会默默更新底牌状态，避免打印两条重复的开局日志
-		t.messenger.SendTo(player.User.ID, MsgTypeStateUpdate, "", snap)
+		t.messenger.SendTo(player.User.ID, MsgTypeHoleCards, "", HoleCardsPayload{
+			Cards: player.HoleCards,
+		})
 	}
 
 	// 10. 通知第一个玩家行动

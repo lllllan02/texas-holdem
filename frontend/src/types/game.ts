@@ -38,6 +38,10 @@ export interface CountdownPayload {
   seconds: number;
 }
 
+export interface HoleCardsPayload {
+  cards: Card[];
+}
+
 export interface ActionDetails {
   call_amount?: number;
   min_bet?: number;
