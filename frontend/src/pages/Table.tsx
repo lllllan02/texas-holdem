@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 
 import { Header } from '../components/Header'
 import { SettingsModal } from '../components/SettingsModal'
+import { PlayingCard } from '../components/PlayingCard'
 import { useUser } from '../hooks/useUser'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { deleteRoom, getRoom } from '../api/room'
@@ -262,6 +263,16 @@ export default function Table() {
         const snap = lastMessage.payload as StateUpdateSnapshot;
         const prevSnap = prevGameStateRef.current;
         
+        // 保留旧快照中的手牌数据（如果新快照中没有，且在同一局游戏中）
+        if (prevSnap && snap.hand_count === prevSnap.hand_count) {
+          snap.players.forEach(p => {
+            const oldP = prevSnap.players?.find(old => old.id === p.id);
+            if (oldP && oldP.hole_cards && oldP.hole_cards.length > 0 && (!p.hole_cards || p.hole_cards.length === 0)) {
+              p.hole_cards = oldP.hole_cards;
+            }
+          });
+        }
+        
         // 只有在第一次收到 state_update，或者状态确实有变化时才更新
         setGameState(snap);
 
@@ -461,6 +472,15 @@ export default function Table() {
             {/* 牌桌内圈线 */}
             <div className="absolute inset-3 sm:inset-4 rounded-[1000px] border-2 border-green-700 opacity-50 pointer-events-none"></div>
 
+            {/* 公共牌 (Board Cards) */}
+            {gameState && gameState.board_cards && gameState.board_cards.length > 0 && (
+              <div className="absolute z-30 flex gap-2 items-center justify-center">
+                {gameState.board_cards.map((card, idx) => (
+                  <PlayingCard key={idx} card={card} />
+                ))}
+              </div>
+            )}
+
             {/* 开局倒计时 */}
             {startCountdown !== null && startCountdown > 0 && (
               <div className="absolute z-40 flex flex-col items-center justify-center pointer-events-none">
@@ -540,6 +560,23 @@ export default function Table() {
                           {player.state !== 'waiting' && player.state !== 'active' && (
                             <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap shadow-md">
                               {player.state === 'ready' ? '已准备' : player.state === 'folded' ? '已弃牌' : player.state === 'allin' ? 'All-in' : player.state}
+                            </div>
+                          )}
+
+                          {/* 手牌 */}
+                          {player.state !== 'waiting' && gameState.stage !== 'WAITING' && (
+                            <div className="absolute -bottom-10 sm:-bottom-12 flex gap-1 z-20">
+                              {player.hole_cards && player.hole_cards.length > 0 ? (
+                                player.hole_cards.map((card, idx) => (
+                                  <PlayingCard key={idx} card={card} className={`scale-75 origin-top ${player.state === 'folded' ? 'opacity-50 grayscale' : ''}`} />
+                                ))
+                              ) : (
+                                // 如果没有具体手牌数据（他人视角），显示背面
+                                <>
+                                  <PlayingCard card={{suit:0, rank:0}} hidden className={`scale-75 origin-top ${player.state === 'folded' ? 'opacity-50 grayscale' : ''}`} />
+                                  <PlayingCard card={{suit:0, rank:0}} hidden className={`scale-75 origin-top ${player.state === 'folded' ? 'opacity-50 grayscale' : ''}`} />
+                                </>
+                              )}
                             </div>
                           )}
 
