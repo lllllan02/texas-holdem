@@ -6,7 +6,7 @@ import { SettingsModal } from '../components/SettingsModal'
 import { useUser } from '../hooks/useUser'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { deleteRoom, getRoom } from '../api/room'
-import type { StateUpdateSnapshot } from '../types/game'
+import type { StateUpdateSnapshot, CountdownPayload, TurnNotificationPayload } from '../types/game'
 import { getSeatPosition } from '../components/tableUtils'
 
 interface GameLog {
@@ -43,9 +43,34 @@ export default function Table() {
   }, [logs])
   
   const [chatInput, setChatInput] = useState('')
+  const [startCountdown, setStartCountdown] = useState<number | null>(null)
+  const [actionCountdown, setActionCountdown] = useState<{ playerId: string, seconds: number } | null>(null)
+  const [turnNotification, setTurnNotification] = useState<TurnNotificationPayload | null>(null)
+  const [betAmount, setBetAmount] = useState<number>(0)
   
   const roomNumber = searchParams.get('room')
   
+  useEffect(() => {
+    if (startCountdown === null || startCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setStartCountdown(prev => (prev !== null && prev > 0 ? prev - 1 : null));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [startCountdown]);
+
+  useEffect(() => {
+    if (!actionCountdown || actionCountdown.seconds <= 0) return;
+    const timer = setInterval(() => {
+      setActionCountdown(prev => {
+        if (prev && prev.seconds > 0) {
+          return { ...prev, seconds: prev.seconds - 1 };
+        }
+        return null;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [actionCountdown?.playerId]);
+
   // 初始化 WebSocket
   const { messageQueue, isKicked, error, sendMessage } = useWebSocket(validatedRoomNumber, user?.id)
   const processedMessageIndexRef = useRef(0)
@@ -240,6 +265,15 @@ export default function Table() {
         // 只有在第一次收到 state_update，或者状态确实有变化时才更新
         setGameState(snap);
 
+        // 如果不是当前玩家的回合，清空通知
+        const currentPlayer = snap.players?.find(p => p.seat_number === snap.current_player_index);
+        if (currentPlayer?.id !== user?.id) {
+          setTurnNotification(null);
+        }
+        if (!currentPlayer) {
+          setActionCountdown(null);
+        }
+
         const reason = lastMessage.reason;
         if (reason) {
           let logText = '';
@@ -317,6 +351,26 @@ export default function Table() {
         }
         
         prevGameStateRef.current = snap;
+      } else if (lastMessage.type === 'texas.countdown') {
+        const payload = lastMessage.payload as CountdownPayload;
+        // 如果 player_id 为空，说明是全局的开局倒计时
+        if (!payload.player_id) {
+          setStartCountdown(payload.seconds > 0 ? payload.seconds : null);
+        } else {
+          setActionCountdown({ playerId: payload.player_id, seconds: payload.seconds });
+        }
+      } else if (lastMessage.type === 'texas.turn_notification') {
+        const payload = lastMessage.payload as TurnNotificationPayload;
+        setActionCountdown({ playerId: payload.player_id, seconds: payload.timeout_seconds });
+        if (payload.player_id === user?.id) {
+          setTurnNotification(payload);
+          // 默认将滑动条设置在最小加注额
+          if (payload.valid_actions.includes('bet')) {
+            setBetAmount(payload.action_details.min_bet || 0);
+          } else if (payload.valid_actions.includes('raise')) {
+            setBetAmount(payload.action_details.min_raise || 0);
+          }
+        }
       }
     }
   }, [messageQueue, user?.id, navigate, isOwner]);
@@ -371,6 +425,11 @@ export default function Table() {
     setChatInput('');
   };
 
+  const handleAction = (action: string, amount?: number) => {
+    sendMessage('texas.action', { action, amount });
+    setTurnNotification(null);
+  };
+
   if (loading) {
     return <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">加载用户信息中...</div>
   }
@@ -401,6 +460,30 @@ export default function Table() {
             
             {/* 牌桌内圈线 */}
             <div className="absolute inset-3 sm:inset-4 rounded-[1000px] border-2 border-green-700 opacity-50 pointer-events-none"></div>
+
+            {/* 开局倒计时 */}
+            {startCountdown !== null && startCountdown > 0 && (
+              <div className="absolute z-40 flex flex-col items-center justify-center pointer-events-none">
+                <div className="text-6xl sm:text-7xl font-bold text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.8)] animate-pulse">
+                  {startCountdown}
+                </div>
+                <div className="text-yellow-400 font-bold mt-2 text-lg sm:text-xl drop-shadow-md">
+                  即将开局
+                </div>
+              </div>
+            )}
+
+            {/* 本人回合倒计时 (中心放大显示) */}
+            {actionCountdown && actionCountdown.playerId === user?.id && actionCountdown.seconds > 0 && (
+              <div className="absolute z-40 flex flex-col items-center justify-center pointer-events-none">
+                <div className={`text-6xl sm:text-7xl font-bold drop-shadow-[0_0_15px_rgba(255,255,255,0.8)] ${actionCountdown.seconds <= 5 ? 'text-red-500 animate-ping' : 'text-yellow-400'}`}>
+                  {actionCountdown.seconds}
+                </div>
+                <div className="text-white font-bold mt-2 text-lg sm:text-xl drop-shadow-md">
+                  请行动
+                </div>
+              </div>
+            )}
 
             {!gameState ? (
               <div className="text-gray-400 font-mono text-lg animate-pulse">
@@ -434,6 +517,15 @@ export default function Table() {
                             {player.is_offline && (
                               <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
                                 <span className="text-xs text-red-400 font-bold">离线</span>
+                              </div>
+                            )}
+
+                            {/* 倒计时遮罩 (他人视角) */}
+                            {actionCountdown && actionCountdown.playerId === player.id && actionCountdown.playerId !== user?.id && actionCountdown.seconds > 0 && (
+                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-full">
+                                <span className={`text-lg font-bold ${actionCountdown.seconds <= 5 ? 'text-red-500 animate-ping' : 'text-yellow-400'}`}>
+                                  {actionCountdown.seconds}
+                                </span>
                               </div>
                             )}
                           </div>
@@ -588,13 +680,75 @@ export default function Table() {
                   }
                 }
 
-                // 游戏进行中的操作按钮占位
+                // 游戏进行中的操作按钮
+                const isMyTurn = turnNotification !== null;
+                const validActions = turnNotification?.valid_actions || [];
+                const details = turnNotification?.action_details || {};
+
                 return (
-                  <div className="grid grid-cols-2 gap-3">
-                    <button className="py-3 bg-gray-700 text-white font-bold rounded-lg opacity-50 cursor-not-allowed shadow-md">弃牌 (Fold)</button>
-                    <button className="py-3 bg-gray-700 text-white font-bold rounded-lg opacity-50 cursor-not-allowed shadow-md">过牌 (Check)</button>
-                    <button className="py-3 bg-gray-700 text-white font-bold rounded-lg opacity-50 cursor-not-allowed shadow-md">跟注 (Call)</button>
-                    <button className="py-3 bg-blue-600 text-white font-bold rounded-lg opacity-50 cursor-not-allowed shadow-md">加注 (Raise)</button>
+                  <div className="flex flex-col gap-3">
+                    {!isMyTurn ? (
+                      <div className="text-center text-gray-400 py-4">等待其他玩家行动...</div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-2 gap-3">
+                          <button 
+                            onClick={() => handleAction('fold')}
+                            disabled={!validActions.includes('fold')}
+                            className={`py-3 font-bold rounded-lg shadow-md transition-colors ${validActions.includes('fold') ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}
+                          >
+                            弃牌 (Fold)
+                          </button>
+                          
+                          <button 
+                            onClick={() => handleAction('check')}
+                            disabled={!validActions.includes('check')}
+                            className={`py-3 font-bold rounded-lg shadow-md transition-colors ${validActions.includes('check') ? 'bg-green-600 hover:bg-green-500 text-white' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}
+                          >
+                            过牌 (Check)
+                          </button>
+                          
+                          <button 
+                            onClick={() => handleAction('call')}
+                            disabled={!validActions.includes('call')}
+                            className={`py-3 font-bold rounded-lg shadow-md transition-colors ${validActions.includes('call') ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}
+                          >
+                            跟注 {details.call_amount ? `($${details.call_amount})` : ''}
+                          </button>
+
+                          <button 
+                            onClick={() => handleAction('allin')}
+                            disabled={!validActions.includes('allin')}
+                            className={`py-3 font-bold rounded-lg shadow-md transition-colors ${validActions.includes('allin') ? 'bg-yellow-600 hover:bg-yellow-500 text-white' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}
+                          >
+                            All-in {details.allin_amount ? `($${details.allin_amount})` : ''}
+                          </button>
+                        </div>
+                        
+                        {(validActions.includes('bet') || validActions.includes('raise')) && (
+                          <div className="flex flex-col gap-2 mt-2 bg-gray-800 p-3 rounded-lg border border-gray-700">
+                            <div className="flex justify-between items-center text-sm text-gray-400">
+                              <span>选择金额: ${betAmount}</span>
+                              <span>Max: ${validActions.includes('bet') ? details.max_bet : details.max_raise}</span>
+                            </div>
+                            <input 
+                              type="range" 
+                              min={validActions.includes('bet') ? details.min_bet : details.min_raise} 
+                              max={validActions.includes('bet') ? details.max_bet : details.max_raise} 
+                              value={betAmount}
+                              onChange={(e) => setBetAmount(Number(e.target.value))}
+                              className="w-full accent-blue-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                            />
+                            <button 
+                              onClick={() => handleAction(validActions.includes('bet') ? 'bet' : 'raise', betAmount)}
+                              className="w-full mt-2 py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg shadow-md transition-colors"
+                            >
+                              {validActions.includes('bet') ? '下注' : '加注'} ${betAmount}
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 );
               })()}

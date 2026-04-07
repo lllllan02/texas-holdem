@@ -33,6 +33,27 @@ export interface ShowdownSummary {
   // ... (will add details later if needed)
 }
 
+export interface CountdownPayload {
+  player_id?: string;
+  seconds: number;
+}
+
+export interface ActionDetails {
+  call_amount?: number;
+  min_bet?: number;
+  max_bet?: number;
+  min_raise?: number;
+  max_raise?: number;
+  allin_amount?: number;
+}
+
+export interface TurnNotificationPayload {
+  player_id: string;
+  valid_actions: string[];
+  action_details: ActionDetails;
+  timeout_seconds: number;
+}
+
 export interface StateUpdateSnapshot {
   hand_count: number;
   button_seat: number;

@@ -409,10 +409,11 @@ func (t *Table) earlyFinish(winner *Player) {
 				}
 			}
 
+			handCount := t.CurrentHand.HandCount
 			t.CurrentHand = nil
 
 			// 广播一局彻底结束、等待玩家重新准备的状态
-			log.Printf("TexasEngine: === Hand #%d Finished ===", t.CurrentHand.HandCount)
+			log.Printf("TexasEngine: === Hand #%d Finished ===", handCount)
 			t.messenger.Broadcast(MsgTypeStateUpdate, ReasonHandFinished, t.BuildPublicSnapshot())
 		})
 	})
@@ -654,10 +655,11 @@ func (t *Table) handleShowdown() {
 				}
 			}
 
+			handCount := t.CurrentHand.HandCount
 			t.CurrentHand = nil
 
 			// 广播一局彻底结束、等待玩家重新准备的状态
-			log.Printf("TexasEngine: === Hand #%d Finished ===", t.CurrentHand.HandCount)
+			log.Printf("TexasEngine: === Hand #%d Finished ===", handCount)
 			t.messenger.Broadcast(MsgTypeStateUpdate, ReasonHandFinished, t.BuildPublicSnapshot())
 		})
 	})
