@@ -662,18 +662,40 @@ export default function Table() {
                     ✕
                   </button>
                   <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 text-center pr-6">第 {lastShowdown.hand_id} 局结算</h2>
+                  
+                  {/* 结算面板中的公共牌 */}
+                  {lastShowdown.board_cards && lastShowdown.board_cards.length > 0 && (
+                    <div className="mb-4 flex flex-col items-center bg-gray-900/50 py-2 rounded-lg">
+                      <span className="text-xs text-gray-400 mb-1">公共牌</span>
+                      <div className="flex gap-1 sm:gap-2">
+                        {lastShowdown.board_cards.map((c, i) => (
+                          <PlayingCard key={i} card={c} className="scale-[0.8] sm:scale-100 origin-top -mb-3 sm:mb-0" />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-2 sm:space-y-3">
                     {lastShowdown.player_results.map(result => (
                       <div key={result.player_id} className={`flex items-center justify-between p-2 sm:p-3 rounded-lg ${result.is_winner ? 'bg-green-900/40 border border-green-700' : 'bg-gray-700/50'}`}>
-                        <div className="flex items-center gap-2 sm:gap-3">
-                          <span className="font-bold text-sm sm:text-base text-gray-200">{result.player_name}</span>
-                          {result.cards && result.cards.length > 0 && (
+                        {/* 左侧：玩家名字 */}
+                        <div className="w-20 sm:w-28 truncate font-bold text-sm sm:text-base text-gray-200">
+                          {result.player_name}
+                        </div>
+                        
+                        {/* 中间：手牌 */}
+                        <div className="flex-1 flex justify-center items-center min-h-[40px]">
+                          {result.cards && result.cards.length > 0 ? (
                             <div className="flex gap-1">
-                              {result.cards.map((c, i) => <PlayingCard key={i} card={c} className="scale-[0.6] sm:scale-75 origin-left -ml-2 sm:-ml-3" />)}
+                              {result.cards.map((c, i) => <PlayingCard key={i} card={c} className="scale-[0.6] sm:scale-75 origin-center" />)}
                             </div>
+                          ) : (
+                            <span className="text-xs text-gray-500">未亮牌</span>
                           )}
                         </div>
-                        <div className="text-right">
+
+                        {/* 右侧：盈亏与牌型 */}
+                        <div className="w-20 sm:w-28 text-right">
                           <div className={`font-bold text-sm sm:text-base ${result.net_profit > 0 ? 'text-green-400' : result.net_profit < 0 ? 'text-red-400' : 'text-gray-400'}`}>
                             {result.net_profit > 0 ? '+' : ''}{result.net_profit}
                           </div>

@@ -58,7 +58,9 @@ func (t *Table) buildShowdownSummary(showCards bool) *ShowdownSummary {
 
 			// 如果不亮牌，且不是赢家，底牌可以隐藏（根据具体需求，这里统一返回底牌，前端根据 ShowCards 决定是否展示）
 			var cards []Card
-			if showCards || winnerMap[p.User.ID] {
+			// 只有在正常摊牌阶段 (showCards == true) 且玩家没有弃牌时，才展示其底牌
+			// 提前结束时，所有人（包括赢家和弃牌玩家）都不亮牌
+			if showCards && p.State != PlayerStateFolded {
 				cards = p.HoleCards
 			}
 

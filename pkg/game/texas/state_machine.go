@@ -376,6 +376,7 @@ func (t *Table) earlyFinish(winner *Player) {
 	winner.Chips += totalWin
 
 	// 3. 广播结算快照
+	// 提前结束时，不亮牌
 	summary := t.buildShowdownSummary(false)
 
 	log.Printf("TexasEngine: Hand #%d finished early. Winner: [%s]", t.CurrentHand.HandCount, winner.User.ID)
@@ -614,6 +615,7 @@ func (t *Table) handleShowdown() {
 	}
 
 	// 4. 构建 ShowdownSummary
+	// 正常摊牌阶段，亮牌
 	summary := t.buildShowdownSummary(true)
 
 	// 5. 广播结算快照
