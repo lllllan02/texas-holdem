@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 
 import { Header } from '../components/Header'
-import { SettingsModal } from '../components/SettingsModal'
+import { HistoryModal } from '../components/HistoryModal'
 import { PlayingCard } from '../components/PlayingCard'
 import { useUser } from '../hooks/useUser'
 import { useWebSocket } from '../hooks/useWebSocket'
@@ -22,10 +22,10 @@ interface GameLog {
 }
 
 export default function Table() {
-  const { user, loading, updateUserInfo } = useUser()
+  const { user, loading } = useUser()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const [showSettings, setShowSettings] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
   const [isOwner, setIsOwner] = useState(false)
   const [validatedRoomNumber, setValidatedRoomNumber] = useState<string | null>(null)
   const [isValidatingRoom, setIsValidatingRoom] = useState(false)
@@ -281,7 +281,11 @@ export default function Table() {
 
         if (snap.showdown_summary) {
           setLastShowdown(snap.showdown_summary);
-          setShowShowdownPanel(true);
+          // 只有在真正进入 SHOWDOWN 阶段时才自动弹出结算面板
+          // 如果是在 WAITING 阶段收到的快照（比如重连），只保存数据不自动弹出
+          if (snap.stage === 'SHOWDOWN') {
+            setShowShowdownPanel(true);
+          }
         } else if (snap.stage === 'PREFLOP' || lastMessage.reason === 'deal_hole_cards') {
           setLastShowdown(null);
           setShowShowdownPanel(false);
@@ -292,10 +296,10 @@ export default function Table() {
         if (currentPlayer?.id !== user?.id) {
           setTurnNotification(null);
         }
-        if (!currentPlayer || snap.stage === 'SHOWDOWN') {
+        if (!currentPlayer || snap.stage === 'SHOWDOWN' || snap.stage === 'WAITING') {
           setActionCountdown(null);
         }
-        if (snap.stage === 'SHOWDOWN') {
+        if (snap.stage === 'SHOWDOWN' || snap.stage === 'WAITING') {
           setStartCountdown(null);
         }
 
@@ -493,8 +497,8 @@ export default function Table() {
           userAvatar={user?.avatar}
           roomNumber={roomNumber || '未知'}
           isOwner={isOwner}
-          onOpenHistory={() => {}} 
-          onOpenSettings={() => setShowSettings(true)} 
+          onOpenHistory={() => setShowHistory(true)} 
+          onOpenSettings={() => {}} 
           onDeleteRoom={handleDeleteRoom}
         />
 
@@ -665,48 +669,50 @@ export default function Table() {
                   
                   {/* 结算面板中的公共牌 */}
                   {lastShowdown.board_cards && lastShowdown.board_cards.length > 0 && (
-                    <div className="mb-4 flex flex-col items-center bg-gray-900/50 py-2 rounded-lg">
-                      <span className="text-xs text-gray-400 mb-1">公共牌</span>
-                      <div className="flex gap-1 sm:gap-2">
-                        {lastShowdown.board_cards.map((c, i) => (
-                          <PlayingCard key={i} card={c} className="scale-[0.8] sm:scale-100 origin-top -mb-3 sm:mb-0" />
-                        ))}
-                      </div>
+                    <div className="flex gap-2 mb-4 justify-center">
+                      {lastShowdown.board_cards.map((c, i) => (
+                        <PlayingCard key={i} card={c} className="scale-[0.8] sm:scale-100 origin-top" />
+                      ))}
                     </div>
                   )}
 
-                  <div className="space-y-2 sm:space-y-3">
-                    {lastShowdown.player_results.map(result => (
-                      <div key={result.player_id} className={`flex items-center justify-between p-2 sm:p-3 rounded-lg ${result.is_winner ? 'bg-green-900/40 border border-green-700' : 'bg-gray-700/50'}`}>
-                        {/* 左侧：玩家名字 */}
-                        <div className="w-20 sm:w-28 truncate font-bold text-sm sm:text-base text-gray-200">
-                          {result.player_name}
-                        </div>
-                        
-                        {/* 中间：手牌 */}
-                        <div className="flex-1 flex justify-center items-center min-h-[40px]">
-                          {result.cards && result.cards.length > 0 ? (
-                            <div className="flex gap-1">
-                              {result.cards.map((c, i) => <PlayingCard key={i} card={c} className="scale-[0.6] sm:scale-75 origin-center" />)}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-gray-500">未亮牌</span>
-                          )}
-                        </div>
-
-                        {/* 右侧：盈亏与牌型 */}
-                        <div className="w-20 sm:w-28 text-right">
-                          <div className={`font-bold text-sm sm:text-base ${result.net_profit > 0 ? 'text-green-400' : result.net_profit < 0 ? 'text-red-400' : 'text-gray-400'}`}>
-                            {result.net_profit > 0 ? '+' : ''}{result.net_profit}
+                  <div className="space-y-2">
+                    {/* 排序：赢家在前，然后按盈亏降序 */}
+                    {[...lastShowdown.player_results].sort((a, b) => {
+                      if (a.is_winner && !b.is_winner) return -1;
+                      if (!a.is_winner && b.is_winner) return 1;
+                      return b.net_profit - a.net_profit;
+                    }).map((result, idx) => {
+                      const isMe = result.player_id === user?.id;
+                      return (
+                        <div key={idx} className={`flex justify-between items-center p-2 rounded border ${result.is_winner ? 'border-green-700/50 bg-green-900/20' : 'border-gray-800 bg-gray-800/30'}`}>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-sm ${isMe ? 'text-blue-400 font-bold' : 'text-white'}`}>
+                              {result.player_name} {isMe && '(You)'}
+                            </span>
                           </div>
-                          {result.hand_rank > 0 && (
-                            <div className="text-[10px] sm:text-xs text-gray-400 mt-1">
-                              {['高牌', '一对', '两对', '三条', '顺子', '同花', '葫芦', '四条', '同花顺', '皇家同花顺'][result.hand_rank - 1] || '未知牌型'}
-                            </div>
-                          )}
+                          <div className="flex items-center gap-3">
+                            {result.cards && result.cards.length > 0 ? (
+                              <div className="flex gap-1 mr-2">
+                                {result.cards.map((c, i) => (
+                                  <PlayingCard key={i} card={c} className="scale-[0.5] sm:scale-[0.6] origin-center" />
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-gray-500 text-xs italic mr-2">未亮牌</span>
+                            )}
+                            {result.hand_rank > 0 && (
+                              <span className="text-gray-400 text-xs">
+                                {['高牌', '一对', '两对', '三条', '顺子', '同花', '葫芦', '四条', '同花顺', '皇家同花顺'][result.hand_rank - 1] || '未知牌型'}
+                              </span>
+                            )}
+                            <span className={`${result.net_profit > 0 ? 'text-green-400' : result.net_profit < 0 ? 'text-red-400' : 'text-gray-500'} font-bold text-sm w-16 text-right`}>
+                              {result.net_profit > 0 ? '+' : ''}{result.net_profit}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -938,19 +944,11 @@ export default function Table() {
         </div>
       )}
 
-      <SettingsModal 
-        show={showSettings} 
-        onClose={() => setShowSettings(false)} 
-        userName={user?.nickname || ''} 
-        userAvatar={user?.avatar}
-        setUserInfo={async (name, avatar) => {
-          try {
-            await updateUserInfo(name, avatar);
-          } catch (e) {
-            console.error('Failed to update user info', e);
-            alert('修改失败');
-          }
-        }} 
+      <HistoryModal 
+        show={showHistory} 
+        onClose={() => setShowHistory(false)} 
+        userId={user?.id}
+        histories={gameState?.histories || []}
       />
 
     </div>

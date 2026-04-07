@@ -1,17 +1,26 @@
 import { useState } from 'react'
 import { History, ChevronDown, ChevronUp } from 'lucide-react'
-import { mockHistories } from './mockData'
+import type { ShowdownSummary } from '../types/game'
+import { PlayingCard } from './PlayingCard'
 
 interface HistoryModalProps {
   show: boolean;
   onClose: () => void;
-  userName: string;
+  userId?: string;
+  histories: ShowdownSummary[];
 }
 
-export function HistoryModal({ show, onClose, userName }: HistoryModalProps) {
-  const [expandedHistoryId, setExpandedHistoryId] = useState<number | null>(3)
+export function HistoryModal({ show, onClose, userId, histories }: HistoryModalProps) {
+  // 默认展开最新的一局
+  const [expandedHistoryId, setExpandedHistoryId] = useState<number | null>(
+    histories.length > 0 ? histories[histories.length - 1].hand_id : null
+  )
 
   if (!show) return null;
+
+  const getHandRankName = (rank: number) => {
+    return ['高牌', '一对', '两对', '三条', '顺子', '同花', '葫芦', '四条', '同花顺', '皇家同花顺'][rank - 1] || '未知牌型';
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -30,99 +39,126 @@ export function HistoryModal({ show, onClose, userName }: HistoryModalProps) {
         </div>
         
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-          {mockHistories.map(history => {
-            const isExpanded = expandedHistoryId === history.id;
-            return (
-              <div key={history.id} className="bg-gray-900/50 rounded-lg border border-gray-700 overflow-hidden">
-                <div 
-                  className="flex justify-between items-center p-3 cursor-pointer hover:bg-gray-800/80 transition-colors"
-                  onClick={() => setExpandedHistoryId(isExpanded ? null : history.id)}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-gray-400 text-sm font-mono w-16">Hand #{history.id}</span>
-                    <div className="flex flex-col gap-1">
-                      {history.details.filter(d => d.amountStr.startsWith('+')).slice(0, 1).map((winner, idx) => (
-                        <div key={idx} className="flex items-center gap-2 text-xs">
-                          <span className={`font-medium ${winner.isMe ? 'text-blue-400' : 'text-gray-300'}`}>
-                            {winner.isMe ? userName : winner.name} {winner.isMe && '(You)'}
-                          </span>
-                          
-                          {winner.cards.length > 0 && (
-                            <>
+          {histories.length === 0 ? (
+            <div className="text-center text-gray-500 text-sm py-8">
+              暂无对局记录
+            </div>
+          ) : (
+            [...histories].reverse().map(history => {
+              const isExpanded = expandedHistoryId === history.hand_id;
+              
+              // 找出赢家展示在折叠面板的摘要上
+              const winners = history.player_results.filter(r => r.is_winner);
+              
+              return (
+                <div key={history.hand_id} className="bg-gray-900/50 rounded-lg border border-gray-700 overflow-hidden">
+                  <div 
+                    className="flex justify-between items-center p-3 cursor-pointer hover:bg-gray-800/80 transition-colors"
+                    onClick={() => setExpandedHistoryId(isExpanded ? null : history.hand_id)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-gray-400 text-sm font-mono w-20">第 {history.hand_id} 局</span>
+                      <div className="flex flex-col gap-1">
+                        {winners.slice(0, 1).map((winner, idx) => {
+                          const isMe = winner.player_id === userId;
+                          return (
+                            <div key={idx} className="flex items-center gap-2 text-xs">
+                              <span className={`font-medium ${isMe ? 'text-blue-400' : 'text-gray-300'}`}>
+                                {winner.player_name} {isMe && '(You)'}
+                              </span>
+                              
+                              {winner.cards && winner.cards.length > 0 && (
+                                <>
+                                  <span className="text-gray-600">|</span>
+                                  <div className="flex gap-0.5">
+                                    {winner.cards.map((c, i) => (
+                                      <PlayingCard key={i} card={c} className="scale-[0.4] origin-left -mr-4" />
+                                    ))}
+                                  </div>
+                                </>
+                              )}
+                              
+                              {winner.hand_rank > 0 && (
+                                <>
+                                  <span className="text-gray-600">|</span>
+                                  <span className="text-gray-400">{getHandRankName(winner.hand_rank)}</span>
+                                </>
+                              )}
+                              
                               <span className="text-gray-600">|</span>
-                              <div className="flex gap-0.5">
-                                {winner.cards.map((c, i) => (
-                                  <div key={i} className={`w-4 h-6 bg-white rounded-sm shadow-sm border border-gray-300 flex items-center justify-center font-bold text-[9px] ${c.includes('♥') || c.includes('♦') ? 'text-red-500' : 'text-black'}`}>
-                                    {c}
-                                  </div>
-                                ))}
-                              </div>
-                            </>
-                          )}
-                          
-                          <span className="text-gray-600">|</span>
-                          <span className="text-gray-400">{winner.handType}</span>
-                          
-                          <span className="text-gray-600">|</span>
-                          <span className="text-green-400 font-bold">{winner.amountStr}</span>
-                        </div>
-                      ))}
+                              <span className="text-green-400 font-bold">+{winner.net_profit}</span>
+                            </div>
+                          );
+                        })}
+                        {winners.length > 1 && (
+                          <div className="text-xs text-gray-500">等 {winners.length} 人获胜...</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-gray-400 font-bold text-sm">底池: ${history.total_pot}</span>
+                      {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-gray-400 font-bold text-sm">Pot: ${history.pot}</span>
-                    {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
-                  </div>
+
+                  {isExpanded && (
+                    <div className="p-4 border-t border-gray-800 bg-gray-900/30">
+                      {history.board_cards && history.board_cards.length > 0 && (
+                        <div className="flex gap-2 mb-4 justify-center">
+                          {history.board_cards.map((card, idx) => (
+                            <PlayingCard key={idx} card={card} className="scale-[0.8] sm:scale-100 origin-top" />
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        {/* 排序：赢家在前，然后按盈亏降序 */}
+                        {[...history.player_results].sort((a, b) => {
+                          if (a.is_winner && !b.is_winner) return -1;
+                          if (!a.is_winner && b.is_winner) return 1;
+                          return b.net_profit - a.net_profit;
+                        }).map((detail, idx) => {
+                          const isMe = detail.player_id === userId;
+                          return (
+                            <div key={idx} className={`flex justify-between items-center p-2 rounded border ${detail.is_winner ? 'border-green-700/50 bg-green-900/20' : 'border-gray-800 bg-gray-800/30'}`}>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-sm ${isMe ? 'text-blue-400 font-bold' : 'text-white'}`}>
+                                  {detail.player_name} {isMe && '(You)'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                {detail.cards && detail.cards.length > 0 ? (
+                                  <div className="flex gap-1 mr-2">
+                                    {detail.cards.map((c, i) => (
+                                      <PlayingCard key={i} card={c} className="scale-[0.5] sm:scale-[0.6] origin-center" />
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-500 text-xs italic mr-2">未亮牌</span>
+                                )}
+                                {detail.hand_rank > 0 && (
+                                  <span className="text-gray-400 text-xs">{getHandRankName(detail.hand_rank)}</span>
+                                )}
+                                <span className={`${detail.net_profit > 0 ? 'text-green-400' : detail.net_profit < 0 ? 'text-red-400' : 'text-gray-500'} font-bold text-sm w-16 text-right`}>
+                                  {detail.net_profit > 0 ? '+' : ''}{detail.net_profit}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
-
-                {isExpanded && (
-                  <div className="p-4 border-t border-gray-800 bg-gray-900/30">
-                    <div className="flex gap-2 mb-4 justify-center">
-                      {history.board.map((card, idx) => (
-                        card ? (
-                          <div key={idx} className={`w-8 h-12 bg-white rounded shadow-sm border border-gray-300 flex items-center justify-center font-bold text-sm ${card.includes('♥') || card.includes('♦') ? 'text-red-500' : 'text-black'}`}>
-                            {card}
-                          </div>
-                        ) : (
-                          <div key={idx} className="w-8 h-12 bg-gray-800 rounded border border-gray-700 opacity-50"></div>
-                        )
-                      ))}
-                    </div>
-
-                    <div className="space-y-2">
-                      {history.details.map((detail, idx) => (
-                        <div key={idx} className={`flex justify-between items-center p-2 rounded border ${detail.borderClass} ${detail.bgClass}`}>
-                          <div className="flex items-center gap-2">
-                            <span className={`${detail.roleClass} text-xs font-bold w-12`}>{detail.role}</span>
-                            <span className={`text-sm ${detail.isMe ? 'text-blue-400 font-bold' : 'text-white'}`}>
-                              {detail.isMe ? userName : detail.name} {detail.isMe && '(You)'}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            {detail.cards.length > 0 && (
-                              <div className="flex gap-1 mr-2">
-                                {detail.cards.map((c, i) => (
-                                  <div key={i} className={`w-5 h-7 bg-white rounded-sm shadow-sm border border-gray-300 flex items-center justify-center font-bold text-[10px] ${c.includes('♥') || c.includes('♦') ? 'text-red-500' : 'text-black'}`}>
-                                    {c}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            <span className={`text-gray-400 text-xs ${detail.italic ? 'italic' : ''}`}>{detail.handType}</span>
-                            <span className={`${detail.amountClass} font-bold text-sm`}>{detail.amountStr}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
+              );
+            })
+          )}
           
-          <div className="text-center text-gray-500 text-sm py-4">
-            没有更多记录了
-          </div>
+          {histories.length > 0 && (
+            <div className="text-center text-gray-500 text-sm py-4">
+              没有更多记录了
+            </div>
+          )}
         </div>
       </div>
     </div>

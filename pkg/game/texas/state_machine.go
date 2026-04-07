@@ -406,11 +406,12 @@ func (t *Table) earlyFinish(winner *Player) {
 						p.Chips = t.InitialChips
 						p.BuyInCount++
 					}
-					// 重置为 Waiting，需要重新准备
+					// 游戏结束后，保留玩家的底牌、下注状态，直到下一局开始时才重置
+					// 这样前端在 WAITING 阶段依然可以渲染出上一局结束时的牌桌状态
 					p.State = PlayerStateWaiting
-					// p.HoleCards = nil // 不再清空底牌，保留给前端展示
-					p.CurrentBet = 0
-					p.HasActedThisRound = false
+					// p.HoleCards = nil
+					// p.CurrentBet = 0
+					// p.HasActedThisRound = false
 				}
 			}
 
@@ -419,6 +420,11 @@ func (t *Table) earlyFinish(winner *Player) {
 
 			// 广播一局彻底结束、等待玩家重新准备的状态
 			log.Printf("TexasEngine: === Hand #%d Finished ===", handCount)
+			
+			// 注意：为了让前端在 WAITING 阶段不丢失牌桌信息（玩家、历史记录等）
+			// 我们依然构建全量快照，但因为 t.CurrentHand == nil，
+			// BuildPublicSnapshot 内部会自动将 Stage 置为 WAITING，
+			// 并从 Histories 中恢复上一局的公共牌和底池信息。
 			t.messenger.Broadcast(MsgTypeStateUpdate, ReasonHandFinished, t.BuildPublicSnapshot())
 		})
 	})
@@ -653,11 +659,12 @@ func (t *Table) handleShowdown() {
 						p.Chips = t.InitialChips
 						p.BuyInCount++
 					}
-					// 游戏结束后，所有玩家状态重置为 Waiting，需要重新点击准备
+					// 游戏结束后，保留玩家的底牌、下注状态，直到下一局开始时才重置
+					// 这样前端在 WAITING 阶段依然可以渲染出上一局结束时的牌桌状态
 					p.State = PlayerStateWaiting
-					// p.HoleCards = nil // 不再清空底牌，保留给前端展示
-					p.CurrentBet = 0
-					p.HasActedThisRound = false
+					// p.HoleCards = nil
+					// p.CurrentBet = 0
+					// p.HasActedThisRound = false
 				}
 			}
 
@@ -666,6 +673,11 @@ func (t *Table) handleShowdown() {
 
 			// 广播一局彻底结束、等待玩家重新准备的状态
 			log.Printf("TexasEngine: === Hand #%d Finished ===", handCount)
+			
+			// 注意：为了让前端在 WAITING 阶段不丢失牌桌信息（玩家、历史记录等）
+			// 我们依然构建全量快照，但因为 t.CurrentHand == nil，
+			// BuildPublicSnapshot 内部会自动将 Stage 置为 WAITING，
+			// 并从 Histories 中恢复上一局的公共牌和底池信息。
 			t.messenger.Broadcast(MsgTypeStateUpdate, ReasonHandFinished, t.BuildPublicSnapshot())
 		})
 	})

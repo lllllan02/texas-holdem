@@ -143,6 +143,10 @@ func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 			lastHistory := t.Histories[len(t.Histories)-1]
 			snap.BoardCards = lastHistory.BoardCards
 			snap.Pot = lastHistory.TotalPot
+			
+			// 如果有历史记录，并且当前正在展示结算面板，则将结算数据附加到快照中
+			// 这样前端在重连时依然可以恢复结算面板的展示
+			snap.ShowdownSummary = lastHistory
 		}
 	}
 

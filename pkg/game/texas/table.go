@@ -388,6 +388,10 @@ func (t *Table) handleReady(userID string) error {
 
 	// 2. 修改玩家状态为 PlayerStateReady
 	player.State = PlayerStateReady
+	
+	// 准备时清空上一局的底牌，避免新的一局开局倒计时期间还显示上一局的牌
+	player.HoleCards = nil
+	
 	log.Printf("TexasEngine: Player [%s] is ready at seat %d", userID, seatIdx)
 
 	// 3. 广播状态更新 (MsgTypeStateUpdate)
