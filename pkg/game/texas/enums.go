@@ -198,3 +198,22 @@ const (
 	MsgTypeStartHand        = "texas.start_hand"        // 牌局正式开始
 	MsgTypeTurnNotification = "texas.turn_notification" // 轮到某人行动的通知
 )
+
+// 状态更新原因 (StateUpdate Reason)
+// 这些常量用于标识每次触发 texas.state_update 广播的具体原因，前端可据此播放对应的动画或展示日志。
+const (
+	ReasonPlayerJoined      = "player_joined"      // 玩家进入房间（旁观或准备坐下）
+	ReasonPlayerLeft        = "player_left"        // 玩家离开房间（断开连接）
+	ReasonPlayerReconnected = "player_reconnected" // 断线的玩家重新连接并恢复状态
+	ReasonSitDown           = "sit_down"           // 玩家在牌桌上选择了一个空位坐下
+	ReasonStandUp           = "stand_up"           // 玩家从牌桌上站起，变回旁观状态
+	ReasonReady             = "ready"              // 玩家准备就绪，等待开局
+	ReasonCancelReady       = "cancel_ready"       // 玩家取消准备状态
+	ReasonDealHoleCards     = "deal_hole_cards"    // 新的一局开始，系统向玩家发放底牌
+	ReasonPlayerAction      = "player_action"      // 玩家执行了具体的打牌动作（如跟注、加注、弃牌等）
+	ReasonNextStage         = "next_stage"         // 游戏进入下一个发牌阶段（如翻牌圈、转牌圈、河牌圈）
+	ReasonShowdown          = "showdown"           // 游戏进入摊牌结算阶段，展示玩家底牌
+	ReasonHandFinished      = "hand_finished"      // 当前牌局正常结束，完成筹码结算
+	ReasonEarlyFinish       = "early_finish"       // 除一名玩家外其他玩家均弃牌，牌局提前结束
+	ReasonFastForward       = "fast_forward"       // 所有存活玩家均已 All-in，跳过下注直接快进发牌
+)

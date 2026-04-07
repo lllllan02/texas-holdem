@@ -197,13 +197,13 @@ func (t *Table) OnPlayerJoin(u *user.User) {
 		player.IsOffline = false
 		// 只有当玩家在座位上时，才需要向其他人广播其重连状态（旁观者重连不需要广播）
 		if t.getSeatIndexByUserID(u.ID) != -1 {
-			t.messenger.Broadcast(MsgTypeStateUpdate, "player_reconnected", t.BuildPublicSnapshot())
+			t.messenger.Broadcast(MsgTypeStateUpdate, ReasonPlayerReconnected, t.BuildPublicSnapshot())
 		}
 	}
 
 	// 3. 发送当前的全局快照给该玩家，以便前端恢复画面
 	snap := t.BuildPersonalSnapshot(u.ID)
-	t.messenger.SendTo(u.ID, MsgTypeStateUpdate, "player_joined", snap)
+	t.messenger.SendTo(u.ID, MsgTypeStateUpdate, ReasonPlayerJoined, snap)
 }
 
 // OnPlayerLeave 玩家离开游戏/掉线时调用
@@ -220,7 +220,7 @@ func (t *Table) OnPlayerLeave(userID string) {
 	// 3. 如果该玩家在座位上，广播其离开（断线）的消息
 	// 旁观者离开不需要广播，以免打扰正在打牌的人
 	if t.getSeatIndexByUserID(userID) != -1 {
-		t.messenger.Broadcast(MsgTypeStateUpdate, "player_left", t.BuildPublicSnapshot())
+		t.messenger.Broadcast(MsgTypeStateUpdate, ReasonPlayerLeft, t.BuildPublicSnapshot())
 	}
 }
 
@@ -345,7 +345,7 @@ func (t *Table) handleSitDown(userID string, payload []byte) error {
 	t.Seats[sitPayload.SeatNumber] = player
 
 	// 6. 广播状态更新 (MsgTypeStateUpdate)
-	t.messenger.Broadcast(MsgTypeStateUpdate, "sit_down", t.BuildPublicSnapshot())
+	t.messenger.Broadcast(MsgTypeStateUpdate, ReasonSitDown, t.BuildPublicSnapshot())
 	return nil
 }
 
@@ -366,7 +366,7 @@ func (t *Table) handleStandUp(userID string) error {
 	t.countdownTimer.Stop()
 
 	// 5. 广播状态更新 (MsgTypeStateUpdate)
-	t.messenger.Broadcast(MsgTypeStateUpdate, "stand_up", t.BuildPublicSnapshot())
+	t.messenger.Broadcast(MsgTypeStateUpdate, ReasonStandUp, t.BuildPublicSnapshot())
 	return nil
 }
 
@@ -382,7 +382,7 @@ func (t *Table) handleReady(userID string) error {
 	player.State = PlayerStateReady
 
 	// 3. 广播状态更新 (MsgTypeStateUpdate)
-	t.messenger.Broadcast(MsgTypeStateUpdate, "ready", t.BuildPublicSnapshot())
+	t.messenger.Broadcast(MsgTypeStateUpdate, ReasonReady, t.BuildPublicSnapshot())
 
 	// 4. 调用 t.checkAndAutoStart() 检查是否满足开局条件
 	t.checkAndAutoStart()
@@ -404,7 +404,7 @@ func (t *Table) handleCancelReady(userID string) error {
 	t.countdownTimer.Stop()
 
 	// 4. 广播状态更新 (MsgTypeStateUpdate)
-	t.messenger.Broadcast(MsgTypeStateUpdate, "cancel_ready", t.BuildPublicSnapshot())
+	t.messenger.Broadcast(MsgTypeStateUpdate, ReasonCancelReady, t.BuildPublicSnapshot())
 	return nil
 }
 

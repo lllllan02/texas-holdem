@@ -17,6 +17,7 @@ interface GameLog {
   senderId?: string;
   senderName?: string;
   senderAvatar?: string;
+  timestamp?: number;
 }
 
 export default function Table() {
@@ -127,6 +128,111 @@ export default function Table() {
           text: `玩家 [${p.user_name}] 离开了房间`,
           type: 'system' as const
         }].slice(-100));
+      } else if (lastMessage.type === 'room.history') {
+        const payload = lastMessage.payload;
+        const chatHistory = payload.chat_history || [];
+        const gameHistory = payload.game_history || [];
+        
+        const historyLogs: GameLog[] = [];
+        
+        chatHistory.forEach((entry: any) => {
+          const chatPayload = entry.message.payload;
+          historyLogs.push({
+            id: 'history-chat-' + Math.random(),
+            time: new Date(entry.time).toLocaleTimeString('zh-CN', { hour12: false }),
+            text: chatPayload.message,
+            type: 'chat',
+            senderId: chatPayload.user_id,
+            senderName: chatPayload.user_name,
+            senderAvatar: chatPayload.avatar,
+            timestamp: entry.time
+          });
+        });
+
+        let tempPrevSnap: StateUpdateSnapshot | null = null;
+        gameHistory.forEach((entry: any) => {
+          const snap = entry.message.payload as StateUpdateSnapshot;
+          const reason = entry.message.reason;
+          let logText = '';
+          
+          const getNewPlayerName = () => {
+            if (!tempPrevSnap) return '某玩家';
+            const newP = snap.players?.find(p => !tempPrevSnap?.players?.find(old => old.id === p.id));
+            return newP ? newP.name : '某玩家';
+          };
+          
+          const getRemovedPlayerName = () => {
+            if (!tempPrevSnap) return '某玩家';
+            const oldP = tempPrevSnap?.players?.find(old => !snap.players?.find(p => p.id === old.id));
+            return oldP ? oldP.name : '某玩家';
+          };
+
+          const getReadyPlayerName = (isReady: boolean) => {
+            if (!tempPrevSnap) return '某玩家';
+            const targetState = isReady ? 'ready' : 'waiting';
+            const p = snap.players?.find(p => {
+              const oldP = tempPrevSnap?.players?.find(old => old.id === p.id);
+              return p.state === targetState && oldP?.state !== targetState;
+            });
+            return p ? p.name : '某玩家';
+          };
+
+          const getOfflineChangedPlayerName = (toOffline: boolean) => {
+            if (!tempPrevSnap) return '某玩家';
+            const p = snap.players?.find(p => {
+              const oldP = tempPrevSnap?.players?.find(old => old.id === p.id);
+              return p.is_offline === toOffline && oldP?.is_offline !== toOffline;
+            });
+            return p ? p.name : '某玩家';
+          };
+
+          switch (reason) {
+            case 'player_reconnected': logText = `${getOfflineChangedPlayerName(false)} 重新连接`; break;
+            case 'sit_down': logText = `${getNewPlayerName()} 坐下了`; break;
+            case 'stand_up': logText = `${getRemovedPlayerName()} 站起了`; break;
+            case 'ready': logText = `${getReadyPlayerName(true)} 已准备`; break;
+            case 'cancel_ready': logText = `${getReadyPlayerName(false)} 取消了准备`; break;
+            case 'deal_hole_cards': logText = `第 ${snap.hand_count + 1} 局游戏开始，正在发牌...`; break;
+            case 'player_action': 
+              if (snap.last_action) {
+                const p = snap.players?.find(p => p.id === snap.last_action?.player_id);
+                const pName = p ? p.name : '某玩家';
+                const actionMap: Record<string, string> = {
+                  'fold': '弃牌', 'check': '过牌', 'call': '跟注', 'bet': '下注', 'raise': '加注', 'allin': 'All-in'
+                };
+                const actName = actionMap[snap.last_action.action || ''] || snap.last_action.action;
+                logText = `${pName} ${actName} ${snap.last_action.amount ? snap.last_action.amount : ''}`;
+              }
+              break;
+            case 'next_stage': 
+              const stageMap: Record<string, string> = {
+                'PREFLOP': '翻牌前', 'FLOP': '翻牌圈', 'TURN': '转牌圈', 'RIVER': '河牌圈', 'SHOWDOWN': '摊牌'
+              };
+              logText = `进入 ${stageMap[snap.stage] || snap.stage} 阶段`; 
+              break;
+            case 'showdown': logText = '进入摊牌结算'; break;
+            case 'hand_finished': logText = `第 ${snap.hand_count} 局游戏结束`; break;
+            case 'early_finish': logText = `其他玩家均已弃牌，本局提前结束`; break;
+          }
+          
+          if (logText) {
+            historyLogs.push({
+              id: 'history-game-' + Math.random(),
+              time: new Date(entry.time).toLocaleTimeString('zh-CN', { hour12: false }),
+              text: logText,
+              type: 'action',
+              timestamp: entry.time
+            });
+          }
+          tempPrevSnap = snap;
+        });
+
+        // Sort by timestamp
+        historyLogs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        
+        setLogs(prev => {
+          return [...prev, ...historyLogs].slice(-100);
+        });
       } else if (lastMessage.type === 'texas.state_update') {
         const snap = lastMessage.payload as StateUpdateSnapshot;
         const prevSnap = prevGameStateRef.current;

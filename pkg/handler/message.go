@@ -1,6 +1,9 @@
 package handler
 
-import "github.com/lllllan02/texas-holdem/pkg/user"
+import (
+	"github.com/lllllan02/texas-holdem/pkg/core"
+	"github.com/lllllan02/texas-holdem/pkg/user"
+)
 
 // 房间级消息类型 (Room MsgType)
 const (
@@ -12,6 +15,7 @@ const (
 	MsgTypeChat        = "room.chat"      // 房间内聊天消息
 	MsgTypePlayerJoin  = "room.player_join"  // 玩家加入房间
 	MsgTypePlayerLeave = "room.player_leave" // 玩家离开房间
+	MsgTypeHistory     = "room.history"      // 房间历史记录同步
 )
 
 // 房间级消息 Payload 结构体
@@ -43,4 +47,16 @@ type WelcomePayload struct {
 type GamePausedPayload struct {
 	IsPaused bool   `json:"is_paused"`
 	UserID   string `json:"user_id"` // 触发暂停/恢复的用户
+}
+
+// HistoryEntry 单条历史记录
+type HistoryEntry struct {
+	Message core.Message `json:"message"`
+	Time    int64        `json:"time"` // 毫秒级时间戳
+}
+
+// HistoryPayload 房间历史记录同步的消息体
+type HistoryPayload struct {
+	ChatHistory []HistoryEntry `json:"chat_history"`
+	GameHistory []HistoryEntry `json:"game_history"`
 }

@@ -3,11 +3,15 @@ package handler
 import (
 	"encoding/json"
 	"log"
+	"time"
 
 	"github.com/lllllan02/texas-holdem/pkg/core"
+	"github.com/lllllan02/texas-holdem/pkg/game/texas"
 	"github.com/lllllan02/texas-holdem/pkg/user"
 	"github.com/lllllan02/texas-holdem/pkg/wscore"
 )
+
+const maxChatHistory = 20 // 房间内最多保留的聊天记录条数
 
 // Room 通用房间：最外层的容器，负责网络连接、聊天、用户进出
 // 房间本身不关心具体玩什么游戏，它只负责挂载一个具体的 GameEngine
@@ -27,20 +31,25 @@ type Room struct {
 	clients    map[string]*wscore.Client // 维护 UserID 到 Client 的映射
 	stopped    bool
 
+	chatHistory []HistoryEntry // 暂存的聊天记录（最多保留 maxChatHistory 条），用于断线重连或新玩家加入时展示
+	gameHistory []HistoryEntry // 暂存的本局游戏动作日志，新的一局开始时清空，用于断线重连时回放本局发生的所有事情
+
 	manager *RoomManager
 }
 
 // NewRoom 创建一个新的房间实例
 func NewRoom(id, roomNumber, ownerID string, engine core.GameEngine, options []byte, manager *RoomManager) (*Room, error) {
 	r := &Room{
-		ID:         id,
-		RoomNumber: roomNumber,
-		OwnerID:    ownerID,
-		Users:      make(map[string]*user.User),
-		GameEngine: engine,
-		hub:        wscore.NewHub(),
-		clients:    make(map[string]*wscore.Client),
-		manager:    manager,
+		ID:          id,
+		RoomNumber:  roomNumber,
+		OwnerID:     ownerID,
+		Users:       make(map[string]*user.User),
+		GameEngine:  engine,
+		hub:         wscore.NewHub(),
+		clients:     make(map[string]*wscore.Client),
+		chatHistory: make([]HistoryEntry, 0),
+		gameHistory: make([]HistoryEntry, 0),
+		manager:     manager,
 	}
 
 	// 初始化游戏引擎
@@ -64,6 +73,33 @@ func (r *Room) Broadcast(msgType string, reason string, payload any) {
 		Reason:  reason,
 		Payload: payload,
 	}
+
+	entry := HistoryEntry{
+		Message: msg,
+		Time:    time.Now().UnixMilli(),
+	}
+
+	// 暂存聊天记录
+	if msgType == MsgTypeChat {
+		r.chatHistory = append(r.chatHistory, entry)
+		if len(r.chatHistory) > maxChatHistory {
+			r.chatHistory = r.chatHistory[1:]
+		}
+	}
+
+	// 暂存游戏日志 (针对德州扑克)
+	if msgType == texas.MsgTypeStateUpdate {
+		if reason == texas.ReasonDealHoleCards {
+			r.gameHistory = nil // 新的一局开始，清空之前的日志
+		}
+
+		// 只要是状态更新，且不是单纯为了同步刚进房间/离开房间的快照，都记录下来
+		// 这样前端在断线重连时，能通过这些日志回放本局发生的所有事情
+		if reason != texas.ReasonPlayerJoined && reason != texas.ReasonPlayerLeft {
+			r.gameHistory = append(r.gameHistory, entry)
+		}
+	}
+
 	data, err := json.Marshal(msg)
 	if err != nil {
 		log.Printf("Room [%s] broadcast marshal error: %v", r.ID, err)
@@ -136,6 +172,18 @@ func (r *Room) OnConnect(client *wscore.Client) {
 		User:       u,
 		GameType:   r.GameEngine.GameType(),
 	})
+
+	// 发送历史记录
+	historyMsg := core.Message{
+		Type: MsgTypeHistory,
+		Payload: HistoryPayload{
+			ChatHistory: r.chatHistory,
+			GameHistory: r.gameHistory,
+		},
+	}
+	if historyData, err := json.Marshal(historyMsg); err == nil {
+		client.SendMessage(historyData)
+	}
 
 	r.GameEngine.OnPlayerJoin(u)
 

@@ -100,7 +100,7 @@ func (t *Table) startNewHand() error {
 		player := t.Seats[seatIdx]
 		// 生成专属快照，其中会包含该玩家的 HoleCards，其他人的 HoleCards 为 nil
 		snap := t.BuildPersonalSnapshot(player.User.ID)
-		t.messenger.SendTo(player.User.ID, MsgTypeStateUpdate, "deal_hole_cards", snap)
+		t.messenger.SendTo(player.User.ID, MsgTypeStateUpdate, ReasonDealHoleCards, snap)
 	}
 
 	// 9. 通知第一个玩家行动
@@ -280,7 +280,7 @@ func (t *Table) processPlayerAction(playerID string, action ActionType, amount i
 
 	snap := t.BuildPublicSnapshot()
 	snap.LastAction = actionInfo
-	t.messenger.Broadcast(MsgTypeStateUpdate, "player_action", snap)
+	t.messenger.Broadcast(MsgTypeStateUpdate, ReasonPlayerAction, snap)
 
 	// 6. 推进状态机
 	t.advanceStateMachine()
@@ -372,7 +372,7 @@ func (t *Table) earlyFinish(winner *Player) {
 	snap := t.BuildPublicSnapshot()
 	snap.Stage = HandStageShowdown
 	snap.ShowdownSummary = summary
-	t.messenger.Broadcast(MsgTypeStateUpdate, "early_finish", snap)
+	t.messenger.Broadcast(MsgTypeStateUpdate, ReasonEarlyFinish, snap)
 
 	// 4. 记录对局历史
 	t.Histories = append(t.Histories, summary)
@@ -405,7 +405,7 @@ func (t *Table) earlyFinish(winner *Player) {
 			t.CurrentHand = nil
 
 			// 广播一局彻底结束、等待玩家重新准备的状态
-			t.messenger.Broadcast(MsgTypeStateUpdate, "hand_finished", t.BuildPublicSnapshot())
+			t.messenger.Broadcast(MsgTypeStateUpdate, ReasonHandFinished, t.BuildPublicSnapshot())
 		})
 	})
 }
@@ -477,7 +477,7 @@ func (t *Table) nextStage() {
 		}
 
 		// 广播快进的快照
-		t.messenger.Broadcast(MsgTypeStateUpdate, "fast_forward", t.BuildPublicSnapshot())
+		t.messenger.Broadcast(MsgTypeStateUpdate, ReasonFastForward, t.BuildPublicSnapshot())
 
 		// 延迟一下再结算，让前端有时间播动画
 		t.showdownTimer.Start(2*time.Second, func() {
@@ -516,7 +516,7 @@ func (t *Table) nextStage() {
 	}
 
 	// 6. 广播进入新阶段的快照
-	t.messenger.Broadcast(MsgTypeStateUpdate, "next_stage", t.BuildPublicSnapshot())
+	t.messenger.Broadcast(MsgTypeStateUpdate, ReasonNextStage, t.BuildPublicSnapshot())
 
 	// 7. 通知第一个玩家行动 (如果还没到 SHOWDOWN)
 	if t.CurrentHand.CurrentPlayerIndex != -1 {
@@ -606,7 +606,7 @@ func (t *Table) handleShowdown() {
 	snap := t.BuildPublicSnapshot()
 	snap.Stage = HandStageShowdown
 	snap.ShowdownSummary = summary
-	t.messenger.Broadcast(MsgTypeStateUpdate, "showdown", snap)
+	t.messenger.Broadcast(MsgTypeStateUpdate, ReasonShowdown, snap)
 
 	// 6. 记录对局历史 (Histories)
 	t.Histories = append(t.Histories, summary)
@@ -646,7 +646,7 @@ func (t *Table) handleShowdown() {
 			t.CurrentHand = nil
 
 			// 广播一局彻底结束、等待玩家重新准备的状态
-			t.messenger.Broadcast(MsgTypeStateUpdate, "hand_finished", t.BuildPublicSnapshot())
+			t.messenger.Broadcast(MsgTypeStateUpdate, ReasonHandFinished, t.BuildPublicSnapshot())
 		})
 	})
 }
