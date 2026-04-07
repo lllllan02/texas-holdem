@@ -2,6 +2,7 @@ package texas
 
 import (
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -30,13 +31,14 @@ func (t *Table) startNewHand() error {
 		BoardCards:         make([]Card, 0, 5),
 		Pot:                0,
 		SidePots:           make([]*SidePot, 0),
-		// 盲注尚未入池，稍后在扣盲后把 CurrentBet 设为「当前街最高注」
 		CurrentBet:         0,
-		// 翻牌前第一次加注的最小增量通常为一个大盲
 		MinRaise:           t.BigBlind,
 		ActionOrder:        make([]int, n),
 		CurrentPlayerIndex: -1,
+		HandCount:          len(t.Histories) + 1,
 	}
+
+	log.Printf("TexasEngine: === Hand #%d Started ===", t.CurrentHand.HandCount)
 
 	// 3. 洗牌
 	t.CurrentHand.Deck.Shuffle()
@@ -49,7 +51,7 @@ func (t *Table) startNewHand() error {
 
 		// 严格满员校验：中间发现空座或未准备，直接报错并回滚
 		if p == nil || p.State != PlayerStateReady {
-			t.CurrentHand = nil 
+			t.CurrentHand = nil
 			return fmt.Errorf("all seats must be occupied and ready to start (seat %d is not ready)", seatIdx)
 		}
 
@@ -100,6 +102,7 @@ func (t *Table) startNewHand() error {
 		player := t.Seats[seatIdx]
 		// 生成专属快照，其中会包含该玩家的 HoleCards，其他人的 HoleCards 为 nil
 		snap := t.BuildPersonalSnapshot(player.User.ID)
+		log.Printf("TexasEngine: Dealt hole cards to Player [%s]", player.User.ID)
 		t.messenger.SendTo(player.User.ID, MsgTypeStateUpdate, ReasonDealHoleCards, snap)
 	}
 
@@ -278,6 +281,8 @@ func (t *Table) processPlayerAction(playerID string, action ActionType, amount i
 		Amount:   amount,
 	}
 
+	log.Printf("TexasEngine: Player [%s] acted: %s (amount: %d)", playerID, action, amount)
+
 	snap := t.BuildPublicSnapshot()
 	snap.LastAction = actionInfo
 	t.messenger.Broadcast(MsgTypeStateUpdate, ReasonPlayerAction, snap)
@@ -337,7 +342,7 @@ func (t *Table) advanceStateMachine() {
 			nextIdx := (currIdx + i) % len(t.CurrentHand.ActionOrder)
 			nextSeatIdx := t.CurrentHand.ActionOrder[nextIdx]
 			player := t.Seats[nextSeatIdx]
-			
+
 			// 只有未弃牌、未 All-in，且（未行动过 或 下注额不足）的玩家才需要行动
 			if player.State != PlayerStateFolded && player.State != PlayerStateAllIn {
 				if !player.HasActedThisRound || player.CurrentBet < t.CurrentHand.CurrentBet {
@@ -347,7 +352,7 @@ func (t *Table) advanceStateMachine() {
 				}
 			}
 		}
-		
+
 		// 如果循环一圈都没找到需要行动的人（比如大家都在之前 All-in 了），直接进入下一阶段
 		t.nextStage()
 	}
@@ -368,6 +373,8 @@ func (t *Table) earlyFinish(winner *Player) {
 
 	// 3. 广播结算快照
 	summary := t.buildShowdownSummary(false)
+
+	log.Printf("TexasEngine: Hand #%d finished early. Winner: [%s]", t.CurrentHand.HandCount, winner.User.ID)
 
 	snap := t.BuildPublicSnapshot()
 	snap.Stage = HandStageShowdown
@@ -405,6 +412,7 @@ func (t *Table) earlyFinish(winner *Player) {
 			t.CurrentHand = nil
 
 			// 广播一局彻底结束、等待玩家重新准备的状态
+			log.Printf("TexasEngine: === Hand #%d Finished ===", t.CurrentHand.HandCount)
 			t.messenger.Broadcast(MsgTypeStateUpdate, ReasonHandFinished, t.BuildPublicSnapshot())
 		})
 	})
@@ -516,6 +524,7 @@ func (t *Table) nextStage() {
 	}
 
 	// 6. 广播进入新阶段的快照
+	log.Printf("TexasEngine: Advancing to stage: %s", t.CurrentHand.Stage)
 	t.messenger.Broadcast(MsgTypeStateUpdate, ReasonNextStage, t.BuildPublicSnapshot())
 
 	// 7. 通知第一个玩家行动 (如果还没到 SHOWDOWN)
@@ -558,7 +567,7 @@ func (t *Table) handleShowdown() {
 			if !ok {
 				continue
 			}
-			
+
 			if bestResult == nil {
 				bestResult = res
 				winners = []string{pid}
@@ -606,6 +615,8 @@ func (t *Table) handleShowdown() {
 	snap := t.BuildPublicSnapshot()
 	snap.Stage = HandStageShowdown
 	snap.ShowdownSummary = summary
+
+	log.Printf("TexasEngine: Showdown reached for Hand #%d", t.CurrentHand.HandCount)
 	t.messenger.Broadcast(MsgTypeStateUpdate, ReasonShowdown, snap)
 
 	// 6. 记录对局历史 (Histories)
@@ -646,6 +657,7 @@ func (t *Table) handleShowdown() {
 			t.CurrentHand = nil
 
 			// 广播一局彻底结束、等待玩家重新准备的状态
+			log.Printf("TexasEngine: === Hand #%d Finished ===", t.CurrentHand.HandCount)
 			t.messenger.Broadcast(MsgTypeStateUpdate, ReasonHandFinished, t.BuildPublicSnapshot())
 		})
 	})

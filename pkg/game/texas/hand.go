@@ -12,6 +12,7 @@ type Hand struct {
 	MinRaise           int        // 最小加注**增量**：合法加注后的总注至少为 CurrentBet + MinRaise（全下例外）
 	ActionOrder        []int      // 行动顺序队列，记录接下来该哪些座位号说话
 	CurrentPlayerIndex int        // 当前正在行动的玩家座位号
+	HandCount          int        // 当前是第几局
 }
 
 // AddBet 将玩家的下注增量加入底池，并自动更新当前街的封顶注 (CurrentBet) 和最小加注额 (MinRaise)

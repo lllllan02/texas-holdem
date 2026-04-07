@@ -3,6 +3,7 @@ package texas
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/lllllan02/texas-holdem/pkg/core"
@@ -195,10 +196,13 @@ func (t *Table) OnPlayerJoin(u *user.User) {
 	// 2. 如果该玩家之前已经落座（断线重连），恢复其在线状态并广播
 	if player.IsOffline {
 		player.IsOffline = false
+		log.Printf("TexasEngine: Player [%s] reconnected", u.ID)
 		// 只有当玩家在座位上时，才需要向其他人广播其重连状态（旁观者重连不需要广播）
 		if t.getSeatIndexByUserID(u.ID) != -1 {
 			t.messenger.Broadcast(MsgTypeStateUpdate, ReasonPlayerReconnected, t.BuildPublicSnapshot())
 		}
+	} else {
+		log.Printf("TexasEngine: Player [%s] joined the room", u.ID)
 	}
 
 	// 3. 发送当前的全局快照给该玩家，以便前端恢复画面
@@ -213,6 +217,8 @@ func (t *Table) OnPlayerLeave(userID string) {
 	if !exists {
 		return
 	}
+
+	log.Printf("TexasEngine: Player [%s] left the room", userID)
 
 	// 2. 标记为断线状态
 	player.IsOffline = true
@@ -343,6 +349,7 @@ func (t *Table) handleSitDown(userID string, payload []byte) error {
 
 	// 5. 将 Player 实体绑定到 Seat
 	t.Seats[sitPayload.SeatNumber] = player
+	log.Printf("TexasEngine: Player [%s] sat down at seat %d", userID, sitPayload.SeatNumber)
 
 	// 6. 广播状态更新 (MsgTypeStateUpdate)
 	t.messenger.Broadcast(MsgTypeStateUpdate, ReasonSitDown, t.BuildPublicSnapshot())
@@ -361,6 +368,7 @@ func (t *Table) handleStandUp(userID string) error {
 	// 3. 重置玩家状态 (Player.State = PlayerStateWaiting)
 	player.State = PlayerStateWaiting
 	t.Seats[seatIdx] = nil
+	log.Printf("TexasEngine: Player [%s] stood up from seat %d", userID, seatIdx)
 
 	// 4. 如果当前正在进行开局倒计时 (Countdown)，必须打断/取消倒计时！
 	t.countdownTimer.Stop()
@@ -380,6 +388,7 @@ func (t *Table) handleReady(userID string) error {
 
 	// 2. 修改玩家状态为 PlayerStateReady
 	player.State = PlayerStateReady
+	log.Printf("TexasEngine: Player [%s] is ready at seat %d", userID, seatIdx)
 
 	// 3. 广播状态更新 (MsgTypeStateUpdate)
 	t.messenger.Broadcast(MsgTypeStateUpdate, ReasonReady, t.BuildPublicSnapshot())
@@ -399,6 +408,7 @@ func (t *Table) handleCancelReady(userID string) error {
 
 	// 2. 修改玩家状态为 PlayerStateWaiting
 	player.State = PlayerStateWaiting
+	log.Printf("TexasEngine: Player [%s] canceled ready at seat %d", userID, seatIdx)
 
 	// 3. 如果当前正在进行开局倒计时 (Countdown)，必须打断/取消倒计时！
 	t.countdownTimer.Stop()
@@ -475,6 +485,7 @@ func (t *Table) checkAndAutoStart() {
 
 	// 3. 所有条件满足，自动触发发牌流程
 	// 启动 3 秒倒计时
+	log.Printf("TexasEngine: All players ready, starting 3s countdown for new hand")
 	t.countdownTimer.Start(3*time.Second, func() {
 		t.messenger.Execute(func() {
 			// 倒计时结束后，尝试开始新的一局

@@ -222,13 +222,13 @@ type ClientMessage struct {
 
 // OnMessage 接收并处理客户端消息
 func (r *Room) OnMessage(client *wscore.Client, message []byte) {
+	userID := client.GetID()
+
 	var msg ClientMessage
 	if err := json.Unmarshal(message, &msg); err != nil {
 		log.Printf("Room [%s] unmarshal message error: %v", r.ID, err)
 		return
 	}
-
-	userID := client.GetID()
 
 	// 拦截房间级消息
 	switch msg.Type {
