@@ -213,8 +213,9 @@ func (t *Table) notifyCurrentPlayer(timeoutSeconds int) {
 						autoAction = ActionTypeCheck
 					}
 
-					// 标记玩家为托管/断线状态
-					currentPlayer.IsOffline = true
+					// 注意：这里不再因为玩家单次超时就将其标记为离线(IsOffline=true)
+					// 只有当玩家真正断开 WebSocket 连接时，OnPlayerLeave 才会将其标记为离线
+					// 这样可以避免玩家只是思考超时就被踢出座位
 
 					t.processPlayerAction(currentPlayerID, autoAction, 0)
 				}
@@ -406,7 +407,7 @@ func (t *Table) earlyFinish(winner *Player) {
 					}
 					// 重置为 Waiting，需要重新准备
 					p.State = PlayerStateWaiting
-					p.HoleCards = nil
+					// p.HoleCards = nil // 不再清空底牌，保留给前端展示
 					p.CurrentBet = 0
 					p.HasActedThisRound = false
 				}
@@ -652,7 +653,7 @@ func (t *Table) handleShowdown() {
 					}
 					// 游戏结束后，所有玩家状态重置为 Waiting，需要重新点击准备
 					p.State = PlayerStateWaiting
-					p.HoleCards = nil
+					// p.HoleCards = nil // 不再清空底牌，保留给前端展示
 					p.CurrentBet = 0
 					p.HasActedThisRound = false
 				}

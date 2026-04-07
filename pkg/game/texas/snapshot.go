@@ -123,7 +123,7 @@ func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 		Histories:  t.Histories,
 	}
 
-	// 1. 映射单局状态 (如果正在游戏中的话)
+	// 1. 映射单局状态 (如果正在游戏中的话，或者刚刚结束但还未清理牌桌)
 	if t.CurrentHand != nil {
 		snap.Stage = t.CurrentHand.Stage
 		snap.Pot = t.CurrentHand.Pot
@@ -137,6 +137,13 @@ func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 		// 如果没有正在进行的牌局，说明在等待阶段
 		snap.Stage = "WAITING"
 		snap.CurrentPlayerIndex = -1
+		
+		// 即使游戏结束，也尝试保留上一局的公共牌和底池信息供展示
+		if len(t.Histories) > 0 {
+			lastHistory := t.Histories[len(t.Histories)-1]
+			snap.BoardCards = lastHistory.BoardCards
+			snap.Pot = lastHistory.TotalPot
+		}
 	}
 
 	// 2. 映射玩家列表并进行【数据脱敏】
@@ -175,6 +182,15 @@ func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 
 		if canSeeCards {
 			pSnap.HoleCards = p.HoleCards
+		} else if snap.Stage == "WAITING" && len(t.Histories) > 0 {
+			// 在等待阶段，尝试从历史记录中恢复亮出的底牌
+			lastHistory := t.Histories[len(t.Histories)-1]
+			for _, res := range lastHistory.PlayerResults {
+				if res.PlayerID == p.User.ID && len(res.Cards) > 0 {
+					pSnap.HoleCards = res.Cards
+					break
+				}
+			}
 		}
 
 		snap.Players = append(snap.Players, pSnap)

@@ -29,8 +29,22 @@ export interface SidePot {
   eligible_player_ids: string[];
 }
 
+export interface PlayerHandResult {
+  player_id: string;
+  player_name: string;
+  net_profit: number;
+  cards: Card[];
+  hand_rank: number;
+  is_winner: boolean;
+}
+
 export interface ShowdownSummary {
-  // ... (will add details later if needed)
+  hand_id: number;
+  total_pot: number;
+  board_cards: Card[];
+  show_cards: boolean;
+  side_pots: SidePot[];
+  player_results: PlayerHandResult[];
 }
 
 export interface CountdownPayload {

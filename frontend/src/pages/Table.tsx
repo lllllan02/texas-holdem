@@ -7,7 +7,7 @@ import { PlayingCard } from '../components/PlayingCard'
 import { useUser } from '../hooks/useUser'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { deleteRoom, getRoom } from '../api/room'
-import type { StateUpdateSnapshot, CountdownPayload, TurnNotificationPayload, HoleCardsPayload } from '../types/game'
+import type { StateUpdateSnapshot, CountdownPayload, TurnNotificationPayload, HoleCardsPayload, ShowdownSummary } from '../types/game'
 import { getSeatPosition } from '../components/tableUtils'
 
 interface GameLog {
@@ -30,6 +30,8 @@ export default function Table() {
   const [validatedRoomNumber, setValidatedRoomNumber] = useState<string | null>(null)
   const [isValidatingRoom, setIsValidatingRoom] = useState(false)
   const [gameState, setGameState] = useState<StateUpdateSnapshot | null>(null)
+  const [lastShowdown, setLastShowdown] = useState<ShowdownSummary | null>(null)
+  const [showShowdownPanel, setShowShowdownPanel] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [logs, setLogs] = useState<GameLog[]>([
@@ -230,12 +232,13 @@ export default function Table() {
                 logText = `${pName} ${actName} ${snap.last_action.amount ? snap.last_action.amount : ''}`;
               }
               break;
-            case 'next_stage': 
+            case 'next_stage': {
               const stageMap: Record<string, string> = {
                 'PREFLOP': '翻牌前', 'FLOP': '翻牌圈', 'TURN': '转牌圈', 'RIVER': '河牌圈', 'SHOWDOWN': '摊牌'
               };
               logText = `进入 ${stageMap[snap.stage] || snap.stage} 阶段`; 
               break;
+            }
             case 'showdown': logText = '进入摊牌结算'; break;
             case 'hand_finished': logText = `第 ${snap.hand_count} 局游戏结束`; break;
             case 'early_finish': logText = `其他玩家均已弃牌，本局提前结束`; break;
@@ -276,13 +279,24 @@ export default function Table() {
         // 只有在第一次收到 state_update，或者状态确实有变化时才更新
         setGameState(snap);
 
+        if (snap.showdown_summary) {
+          setLastShowdown(snap.showdown_summary);
+          setShowShowdownPanel(true);
+        } else if (snap.stage === 'PREFLOP' || lastMessage.reason === 'deal_hole_cards') {
+          setLastShowdown(null);
+          setShowShowdownPanel(false);
+        }
+
         // 如果不是当前玩家的回合，清空通知
         const currentPlayer = snap.players?.find(p => p.seat_number === snap.current_player_index);
         if (currentPlayer?.id !== user?.id) {
           setTurnNotification(null);
         }
-        if (!currentPlayer) {
+        if (!currentPlayer || snap.stage === 'SHOWDOWN') {
           setActionCountdown(null);
+        }
+        if (snap.stage === 'SHOWDOWN') {
+          setStartCountdown(null);
         }
 
         const reason = lastMessage.reason;
@@ -340,12 +354,13 @@ export default function Table() {
                 logText = `${pName} ${actName} ${snap.last_action.amount ? snap.last_action.amount : ''}`;
               }
               break;
-            case 'next_stage': 
+            case 'next_stage': {
               const stageMap: Record<string, string> = {
                 'PREFLOP': '翻牌前', 'FLOP': '翻牌圈', 'TURN': '转牌圈', 'RIVER': '河牌圈', 'SHOWDOWN': '摊牌'
               };
               logText = `进入 ${stageMap[snap.stage] || snap.stage} 阶段`; 
               break;
+            }
             case 'showdown': logText = '进入摊牌结算'; break;
             case 'hand_finished': logText = `第 ${snap.hand_count} 局游戏结束`; break;
             case 'early_finish': logText = `其他玩家均已弃牌，本局提前结束`; break;
@@ -429,14 +444,20 @@ export default function Table() {
 
   const handleSitDown = (seatNumber: number) => {
     sendMessage('texas.sit_down', { seat_number: seatNumber });
+    setLastShowdown(null);
+    setShowShowdownPanel(false);
   };
 
   const handleStandUp = () => {
     sendMessage('texas.stand_up', {});
+    setLastShowdown(null);
+    setShowShowdownPanel(false);
   };
 
   const handleReady = () => {
     sendMessage('texas.ready', {});
+    setLastShowdown(null);
+    setShowShowdownPanel(false);
   };
 
   const handleCancelReady = () => {
@@ -485,18 +506,27 @@ export default function Table() {
             {/* 牌桌内圈线 */}
             <div className="absolute inset-3 sm:inset-4 rounded-[1000px] border-2 border-green-700 opacity-50 pointer-events-none"></div>
 
-            {/* 公共牌 (Board Cards) */}
-            {gameState && gameState.board_cards && gameState.board_cards.length > 0 && (
-              <div className="absolute z-30 flex gap-2 items-center justify-center">
-                {gameState.board_cards.map((card, idx) => (
-                  <PlayingCard key={idx} card={card} />
-                ))}
+            {/* 公共牌和底池 */}
+            {gameState && (gameState.board_cards?.length > 0 || gameState.pot > 0) && (
+              <div className="absolute z-30 flex flex-col items-center justify-center gap-2">
+                {gameState.pot > 0 && (
+                  <div className="bg-black/60 px-4 py-1 rounded-full text-yellow-400 font-bold text-sm sm:text-base border border-yellow-600/30 shadow-lg backdrop-blur-sm">
+                    底池: ${gameState.pot}
+                  </div>
+                )}
+                {gameState.board_cards && gameState.board_cards.length > 0 && (
+                  <div className="flex gap-2 items-center justify-center">
+                    {gameState.board_cards.map((card, idx) => (
+                      <PlayingCard key={idx} card={card} />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
             {/* 开局倒计时 */}
-            {startCountdown !== null && startCountdown > 0 && (
-              <div className="absolute z-40 flex flex-col items-center justify-center pointer-events-none">
+            {startCountdown !== null && startCountdown > 0 && gameState?.stage !== 'SHOWDOWN' && (
+              <div className="absolute z-40 flex flex-col items-center justify-center pointer-events-none top-[10%]">
                 <div className="text-6xl sm:text-7xl font-bold text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.8)] animate-pulse">
                   {startCountdown}
                 </div>
@@ -507,8 +537,8 @@ export default function Table() {
             )}
 
             {/* 本人回合倒计时 (中心放大显示) */}
-            {actionCountdown && actionCountdown.playerId === user?.id && actionCountdown.seconds > 0 && (
-              <div className="absolute z-40 flex flex-col items-center justify-center pointer-events-none">
+            {actionCountdown && actionCountdown.playerId === user?.id && actionCountdown.seconds > 0 && gameState?.stage !== 'SHOWDOWN' && (
+              <div className="absolute z-40 flex flex-col items-center justify-center pointer-events-none top-[10%]">
                 <div className={`text-6xl sm:text-7xl font-bold drop-shadow-[0_0_15px_rgba(255,255,255,0.8)] ${actionCountdown.seconds <= 5 ? 'text-red-500 animate-ping' : 'text-yellow-400'}`}>
                   {actionCountdown.seconds}
                 </div>
@@ -554,7 +584,7 @@ export default function Table() {
                             )}
 
                             {/* 倒计时遮罩 (他人视角) */}
-                            {actionCountdown && actionCountdown.playerId === player.id && actionCountdown.playerId !== user?.id && actionCountdown.seconds > 0 && (
+                            {actionCountdown && actionCountdown.playerId === player.id && actionCountdown.playerId !== user?.id && actionCountdown.seconds > 0 && gameState?.stage !== 'SHOWDOWN' && (
                               <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-full">
                                 <span className={`text-lg font-bold ${actionCountdown.seconds <= 5 ? 'text-red-500 animate-ping' : 'text-yellow-400'}`}>
                                   {actionCountdown.seconds}
@@ -577,19 +607,19 @@ export default function Table() {
                           )}
 
                           {/* 手牌 */}
-                          {player.state !== 'waiting' && gameState.stage !== 'WAITING' && (
-                            <div className="absolute -bottom-10 sm:-bottom-12 flex gap-1 z-20">
+                          {(player.state !== 'waiting' || (gameState.stage === 'WAITING' && player.hole_cards && player.hole_cards.length > 0)) && (
+                            <div className="absolute top-full mt-1 flex gap-1 z-20">
                               {player.hole_cards && player.hole_cards.length > 0 ? (
                                 player.hole_cards.map((card, idx) => (
                                   <PlayingCard key={idx} card={card} className={`scale-75 origin-top ${player.state === 'folded' ? 'opacity-50 grayscale' : ''}`} />
                                 ))
-                              ) : (
-                                // 如果没有具体手牌数据（他人视角），显示背面
+                              ) : gameState.stage !== 'WAITING' && player.state !== 'waiting' ? (
+                                // 如果没有具体手牌数据（他人视角），且游戏在进行中，显示背面
                                 <>
                                   <PlayingCard card={{suit:0, rank:0}} hidden className={`scale-75 origin-top ${player.state === 'folded' ? 'opacity-50 grayscale' : ''}`} />
                                   <PlayingCard card={{suit:0, rank:0}} hidden className={`scale-75 origin-top ${player.state === 'folded' ? 'opacity-50 grayscale' : ''}`} />
                                 </>
-                              )}
+                              ) : null}
                             </div>
                           )}
 
@@ -619,6 +649,55 @@ export default function Table() {
                   );
                 })}
               </>
+            )}
+
+            {/* 结算面板 */}
+            {lastShowdown && showShowdownPanel && (
+              <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 rounded-[1000px] backdrop-blur-sm">
+                <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 sm:p-6 shadow-2xl w-[90%] max-w-md max-h-[80%] overflow-y-auto pointer-events-auto relative">
+                  <button 
+                    onClick={() => setShowShowdownPanel(false)}
+                    className="absolute top-3 right-3 text-gray-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-700 transition-colors"
+                  >
+                    ✕
+                  </button>
+                  <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 text-center pr-6">第 {lastShowdown.hand_id} 局结算</h2>
+                  <div className="space-y-2 sm:space-y-3">
+                    {lastShowdown.player_results.map(result => (
+                      <div key={result.player_id} className={`flex items-center justify-between p-2 sm:p-3 rounded-lg ${result.is_winner ? 'bg-green-900/40 border border-green-700' : 'bg-gray-700/50'}`}>
+                        <div className="flex items-center gap-2 sm:gap-3">
+                          <span className="font-bold text-sm sm:text-base text-gray-200">{result.player_name}</span>
+                          {result.cards && result.cards.length > 0 && (
+                            <div className="flex gap-1">
+                              {result.cards.map((c, i) => <PlayingCard key={i} card={c} className="scale-[0.6] sm:scale-75 origin-left -ml-2 sm:-ml-3" />)}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <div className={`font-bold text-sm sm:text-base ${result.net_profit > 0 ? 'text-green-400' : result.net_profit < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                            {result.net_profit > 0 ? '+' : ''}{result.net_profit}
+                          </div>
+                          {result.hand_rank > 0 && (
+                            <div className="text-[10px] sm:text-xs text-gray-400 mt-1">
+                              {['高牌', '一对', '两对', '三条', '顺子', '同花', '葫芦', '四条', '同花顺', '皇家同花顺'][result.hand_rank - 1] || '未知牌型'}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 重新打开结算面板的按钮 */}
+            {lastShowdown && !showShowdownPanel && (
+              <button
+                onClick={() => setShowShowdownPanel(true)}
+                className="absolute top-4 right-4 z-50 bg-gray-800/80 hover:bg-gray-700 text-white text-xs sm:text-sm px-3 py-1.5 rounded-full shadow-lg border border-gray-600 backdrop-blur-sm transition-colors"
+              >
+                查看上局结算
+              </button>
             )}
           </div>
         </main>
