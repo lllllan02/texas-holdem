@@ -42,7 +42,7 @@ export default function Home() {
       if (!user) return
       try {
         const { rooms } = await getUserActiveRooms(user.id)
-        setActiveRooms(rooms.sort((a, b) => b.joined_at - a.joined_at))
+        setActiveRooms((rooms || []).sort((a, b) => b.joined_at - a.joined_at))
       } catch (err: any) {
         console.error('Failed to fetch active rooms:', err)
       }

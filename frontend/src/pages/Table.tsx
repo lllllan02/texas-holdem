@@ -4,6 +4,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Header } from '../components/Header'
 import { HistoryModal } from '../components/HistoryModal'
 import { PlayingCard } from '../components/PlayingCard'
+import { PlayerResultList } from '../components/PlayerResultList'
 import { useUser } from '../hooks/useUser'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { deleteRoom, getRoom } from '../api/room'
@@ -220,6 +221,9 @@ export default function Table() {
             case 'stand_up': logText = `${getRemovedPlayerName()} 站起了`; break;
             case 'ready': logText = `${getReadyPlayerName(true)} 已准备`; break;
             case 'cancel_ready': logText = `${getReadyPlayerName(false)} 取消了准备`; break;
+            case 'countdown_started': 
+              // 忽略 countdown_started 的日志，因为会有专门的 UI 提示
+              break;
             case 'deal_hole_cards': logText = `第 ${snap.hand_count + 1} 局游戏开始，正在发牌...`; break;
             case 'player_action': 
               if (snap.last_action) {
@@ -266,8 +270,8 @@ export default function Table() {
         const snap = lastMessage.payload as StateUpdateSnapshot;
         const prevSnap = prevGameStateRef.current;
         
-        // 保留旧快照中的手牌数据（如果新快照中没有，且在同一局游戏中）
-        if (prevSnap && snap.hand_count === prevSnap.hand_count) {
+        // 保留旧快照中的手牌数据（如果新快照中没有，且在同一局游戏中，且上一状态不是 WAITING）
+        if (prevSnap && snap.hand_count === prevSnap.hand_count && prevSnap.stage !== 'WAITING') {
           snap.players.forEach(p => {
             const oldP = prevSnap.players?.find(old => old.id === p.id);
             if (oldP && oldP.hole_cards && oldP.hole_cards.length > 0 && (!p.hole_cards || p.hole_cards.length === 0)) {
@@ -346,6 +350,9 @@ export default function Table() {
             case 'stand_up': logText = `${getRemovedPlayerName()} 站起了`; break;
             case 'ready': logText = `${getReadyPlayerName(true)} 已准备`; break;
             case 'cancel_ready': logText = `${getReadyPlayerName(false)} 取消了准备`; break;
+            case 'countdown_started': 
+              // 忽略 countdown_started 的日志，因为会有专门的 UI 提示
+              break;
             case 'deal_hole_cards': logText = `第 ${snap.hand_count + 1} 局游戏开始，正在发牌...`; break;
             case 'player_action': 
               if (snap.last_action) {
@@ -530,23 +537,23 @@ export default function Table() {
 
             {/* 开局倒计时 */}
             {startCountdown !== null && startCountdown > 0 && gameState?.stage !== 'SHOWDOWN' && (
-              <div className="absolute z-40 flex flex-col items-center justify-center pointer-events-none top-[10%]">
-                <div className="text-6xl sm:text-7xl font-bold text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.8)] animate-pulse">
+              <div className="absolute z-40 flex flex-col items-center justify-center pointer-events-none top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-50">
+                <div className="text-8xl sm:text-9xl font-bold text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.8)] animate-pulse">
                   {startCountdown}
                 </div>
-                <div className="text-yellow-400 font-bold mt-2 text-lg sm:text-xl drop-shadow-md">
+                <div className="text-yellow-400 font-bold mt-2 text-2xl sm:text-3xl drop-shadow-md">
                   即将开局
                 </div>
               </div>
             )}
 
-            {/* 本人回合倒计时 (中心放大显示) */}
-            {actionCountdown && actionCountdown.playerId === user?.id && actionCountdown.seconds > 0 && gameState?.stage !== 'SHOWDOWN' && (
-              <div className="absolute z-40 flex flex-col items-center justify-center pointer-events-none top-[10%]">
-                <div className={`text-6xl sm:text-7xl font-bold drop-shadow-[0_0_15px_rgba(255,255,255,0.8)] ${actionCountdown.seconds <= 5 ? 'text-red-500 animate-ping' : 'text-yellow-400'}`}>
+            {/* 本人回合倒计时 (最后五秒中心放大显示) */}
+            {actionCountdown && actionCountdown.playerId === user?.id && actionCountdown.seconds > 0 && actionCountdown.seconds <= 5 && gameState?.stage !== 'SHOWDOWN' && (
+              <div className="absolute z-40 flex flex-col items-center justify-center pointer-events-none top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-50">
+                <div className="text-8xl sm:text-9xl font-bold drop-shadow-[0_0_15px_rgba(255,255,255,0.8)] text-red-500 animate-ping">
                   {actionCountdown.seconds}
                 </div>
-                <div className="text-white font-bold mt-2 text-lg sm:text-xl drop-shadow-md">
+                <div className="text-white font-bold mt-2 text-2xl sm:text-3xl drop-shadow-md">
                   请行动
                 </div>
               </div>
@@ -561,19 +568,23 @@ export default function Table() {
                 {/* 座位渲染 */}
                 {Array.from({ length: gameState.max_players || 9 }).map((_, index) => {
                   const player = gameState.players?.find(p => p.seat_number === index);
-                  const isMySeat = player?.id === user?.id;
+                          const isMySeat = player?.id === user?.id;
+                  const isActivePlayer = gameState.current_player_index === index && gameState.stage !== 'WAITING' && gameState.stage !== 'SHOWDOWN';
                   const position = getSeatPosition(gameState.max_players || 9, index);
 
                   return (
                     <div 
                       key={`seat-${index}`}
                       className="absolute"
-                      style={{ ...position, zIndex: 50 }}
+                      style={{ ...position, zIndex: isActivePlayer ? 60 : 50 }}
                     >
                       {player ? (
                         <div className="flex flex-col items-center group relative">
                           {/* 玩家头像和信息 */}
-                          <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full border-4 ${isMySeat ? 'border-yellow-400' : 'border-gray-600'} bg-gray-800 flex items-center justify-center overflow-hidden shadow-lg relative`}>
+                          <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full border-4 ${
+                            isActivePlayer ? 'border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.8)]' : 
+                            isMySeat ? 'border-yellow-400' : 'border-gray-600'
+                          } bg-gray-800 flex items-center justify-center overflow-hidden shadow-lg relative transition-all duration-300`}>
                             {player.avatar ? (
                               <img src={player.avatar} alt={player.name} className="w-full h-full object-cover" />
                             ) : (
@@ -587,8 +598,8 @@ export default function Table() {
                               </div>
                             )}
 
-                            {/* 倒计时遮罩 (他人视角) */}
-                            {actionCountdown && actionCountdown.playerId === player.id && actionCountdown.playerId !== user?.id && actionCountdown.seconds > 0 && gameState?.stage !== 'SHOWDOWN' && (
+                            {/* 倒计时遮罩 */}
+                            {actionCountdown && actionCountdown.playerId === player.id && actionCountdown.seconds > 0 && gameState?.stage !== 'SHOWDOWN' && (
                               <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-full">
                                 <span className={`text-lg font-bold ${actionCountdown.seconds <= 5 ? 'text-red-500 animate-ping' : 'text-yellow-400'}`}>
                                   {actionCountdown.seconds}
@@ -605,8 +616,15 @@ export default function Table() {
 
                           {/* 状态标签 */}
                           {player.state !== 'waiting' && player.state !== 'active' && (
-                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap shadow-md">
+                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap shadow-md z-40">
                               {player.state === 'ready' ? '已准备' : player.state === 'folded' ? '已弃牌' : player.state === 'allin' ? 'All-in' : player.state}
+                            </div>
+                          )}
+
+                          {/* 位置标签 */}
+                          {player.position && gameState.stage !== 'WAITING' && (
+                            <div className="absolute -top-2 -left-2 bg-yellow-600 text-white text-[10px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md z-40 border border-yellow-500">
+                              {player.position}
                             </div>
                           )}
 
@@ -624,6 +642,23 @@ export default function Table() {
                                   <PlayingCard card={{suit:0, rank:0}} hidden className={`scale-75 origin-top ${player.state === 'folded' ? 'opacity-50 grayscale' : ''}`} />
                                 </>
                               ) : null}
+                            </div>
+                          )}
+
+                          {/* 本轮下注额 */}
+                          {player.current_bet > 0 && (
+                            <div 
+                              className="absolute flex items-center bg-black/60 border border-yellow-500/50 rounded-full px-2 py-0.5 shadow-sm z-30"
+                              style={{
+                                top: '50%',
+                                left: '50%',
+                                transform: `translate(calc(-50% + ${-Math.cos(Math.PI / 2 + (index * 2 * Math.PI) / (gameState.max_players || 9)) * 120}px), calc(-50% + ${-Math.sin(Math.PI / 2 + (index * 2 * Math.PI) / (gameState.max_players || 9)) * 120}px))`
+                              }}
+                            >
+                              <div className="w-3 h-3 rounded-full border-2 border-dashed border-yellow-300 bg-yellow-500 mr-1 shadow-inner"></div>
+                              <span className="text-xs font-bold text-yellow-400">
+                                ${player.current_bet}
+                              </span>
                             </div>
                           )}
 
@@ -676,44 +711,7 @@ export default function Table() {
                     </div>
                   )}
 
-                  <div className="space-y-2">
-                    {/* 排序：赢家在前，然后按盈亏降序 */}
-                    {[...lastShowdown.player_results].sort((a, b) => {
-                      if (a.is_winner && !b.is_winner) return -1;
-                      if (!a.is_winner && b.is_winner) return 1;
-                      return b.net_profit - a.net_profit;
-                    }).map((result, idx) => {
-                      const isMe = result.player_id === user?.id;
-                      return (
-                        <div key={idx} className={`flex justify-between items-center p-2 rounded border ${result.is_winner ? 'border-green-700/50 bg-green-900/20' : 'border-gray-800 bg-gray-800/30'}`}>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-sm ${isMe ? 'text-blue-400 font-bold' : 'text-white'}`}>
-                              {result.player_name} {isMe && '(You)'}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            {result.cards && result.cards.length > 0 ? (
-                              <div className="flex gap-1 mr-2">
-                                {result.cards.map((c, i) => (
-                                  <PlayingCard key={i} card={c} className="scale-[0.5] sm:scale-[0.6] origin-center" />
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-gray-500 text-xs italic mr-2">未亮牌</span>
-                            )}
-                            {result.hand_rank > 0 && (
-                              <span className="text-gray-400 text-xs">
-                                {['高牌', '一对', '两对', '三条', '顺子', '同花', '葫芦', '四条', '同花顺', '皇家同花顺'][result.hand_rank - 1] || '未知牌型'}
-                              </span>
-                            )}
-                            <span className={`${result.net_profit > 0 ? 'text-green-400' : result.net_profit < 0 ? 'text-red-400' : 'text-gray-500'} font-bold text-sm w-16 text-right`}>
-                              {result.net_profit > 0 ? '+' : ''}{result.net_profit}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <PlayerResultList results={lastShowdown.player_results} currentUserId={user?.id} />
                 </div>
               </div>
             )}
@@ -882,28 +880,105 @@ export default function Table() {
                           </button>
                         </div>
                         
-                        {(validActions.includes('bet') || validActions.includes('raise')) && (
-                          <div className="flex flex-col gap-2 mt-2 bg-gray-800 p-3 rounded-lg border border-gray-700">
-                            <div className="flex justify-between items-center text-sm text-gray-400">
-                              <span>选择金额: ${betAmount}</span>
-                              <span>Max: ${validActions.includes('bet') ? details.max_bet : details.max_raise}</span>
+                        {(validActions.includes('bet') || validActions.includes('raise')) && (() => {
+                          const minAmount = validActions.includes('bet') ? (details.min_bet || 0) : (details.min_raise || 0);
+                          const maxAmount = validActions.includes('bet') ? (details.max_bet || 0) : (details.max_raise || 0);
+                          const bb = gameState.big_blind || 20;
+                          
+                          const callAmount = details.call_amount || 0;
+                          const currentPot = gameState.pot + callAmount;
+                          
+                          const handleQuickBet = (type: 'min' | 'half' | 'three-quarters' | 'pot' | 'allin') => {
+                            let target = minAmount;
+                            if (type === 'half') target = Math.floor(currentPot / 2) + callAmount;
+                            if (type === 'three-quarters') target = Math.floor(currentPot * 3 / 4) + callAmount;
+                            if (type === 'pot') target = currentPot + callAmount;
+                            if (type === 'allin') target = maxAmount;
+                            
+                            if (target < minAmount) target = minAmount;
+                            if (target > maxAmount) target = maxAmount;
+                            setBetAmount(target);
+                          };
+
+                          const adjustBet = (delta: number) => {
+                            let newAmount = betAmount + delta;
+                            if (newAmount < minAmount) newAmount = minAmount;
+                            if (newAmount > maxAmount) newAmount = maxAmount;
+                            setBetAmount(newAmount);
+                          };
+
+                          return (
+                            <div className="flex flex-col gap-3 mt-2 bg-gray-800 p-3 rounded-lg border border-gray-700">
+                              <div className="flex justify-between items-center text-sm text-gray-400">
+                                <span>下注金额</span>
+                                <span className="text-green-400">有效积分: {maxAmount}</span>
+                              </div>
+                              
+                              <div className="flex items-center gap-2">
+                                <div className="relative flex-1">
+                                  <input 
+                                    type="number" 
+                                    min={minAmount} 
+                                    max={maxAmount} 
+                                    value={betAmount || ''}
+                                    onChange={(e) => setBetAmount(Number(e.target.value))}
+                                    onFocus={(e) => e.target.select()}
+                                    onBlur={() => {
+                                      if (betAmount < minAmount) setBetAmount(minAmount);
+                                      if (betAmount > maxAmount) setBetAmount(maxAmount);
+                                    }}
+                                    className="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-white outline-none focus:border-blue-500 transition-colors font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  />
+                                </div>
+                                <span className="text-gray-400 text-sm w-16 text-right">
+                                  ({(betAmount / bb).toFixed(1)} BB)
+                                </span>
+                              </div>
+
+                              <div className="text-xs text-gray-500">
+                                范围: {minAmount} - {maxAmount}
+                              </div>
+
+                              <div className="flex items-center gap-3 py-1">
+                                <button 
+                                  onClick={() => adjustBet(-bb)}
+                                  className="w-8 h-8 flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded-full text-white font-bold shrink-0 shadow-sm"
+                                >
+                                  -
+                                </button>
+                                <input 
+                                  type="range" 
+                                  min={minAmount} 
+                                  max={maxAmount} 
+                                  value={betAmount}
+                                  onChange={(e) => setBetAmount(Number(e.target.value))}
+                                  className="flex-1 accent-blue-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                                />
+                                <button 
+                                  onClick={() => adjustBet(bb)}
+                                  className="w-8 h-8 flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded-full text-white font-bold shrink-0 shadow-sm"
+                                >
+                                  +
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-5 gap-1.5 mt-1">
+                                <button onClick={() => handleQuickBet('min')} className="bg-gray-700 text-gray-200 text-xs py-2 rounded hover:bg-gray-600 font-medium transition-colors">最小</button>
+                                <button onClick={() => handleQuickBet('half')} className="bg-gray-700 text-gray-200 text-xs py-2 rounded hover:bg-gray-600 font-medium transition-colors">1/2</button>
+                                <button onClick={() => handleQuickBet('three-quarters')} className="bg-gray-700 text-gray-200 text-xs py-2 rounded hover:bg-gray-600 font-medium transition-colors">3/4</button>
+                                <button onClick={() => handleQuickBet('pot')} className="bg-gray-700 text-gray-200 text-xs py-2 rounded hover:bg-gray-600 font-medium transition-colors">Pot</button>
+                                <button onClick={() => handleQuickBet('allin')} className="bg-red-900/50 text-red-400 border border-red-800/50 text-xs py-2 rounded hover:bg-red-900/70 font-bold transition-colors">全押</button>
+                              </div>
+
+                              <button 
+                                onClick={() => handleAction(validActions.includes('bet') ? 'bet' : 'raise', betAmount)}
+                                className="w-full mt-1 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-md transition-colors"
+                              >
+                                {validActions.includes('bet') ? '下注' : '加注'} {betAmount}
+                              </button>
                             </div>
-                            <input 
-                              type="range" 
-                              min={validActions.includes('bet') ? details.min_bet : details.min_raise} 
-                              max={validActions.includes('bet') ? details.max_bet : details.max_raise} 
-                              value={betAmount}
-                              onChange={(e) => setBetAmount(Number(e.target.value))}
-                              className="w-full accent-blue-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                            />
-                            <button 
-                              onClick={() => handleAction(validActions.includes('bet') ? 'bet' : 'raise', betAmount)}
-                              className="w-full mt-2 py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg shadow-md transition-colors"
-                            >
-                              {validActions.includes('bet') ? '下注' : '加注'} ${betAmount}
-                            </button>
-                          </div>
-                        )}
+                          );
+                        })()}
                       </>
                     )}
                   </div>

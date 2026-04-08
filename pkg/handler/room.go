@@ -105,7 +105,11 @@ func (r *Room) Broadcast(msgType string, reason string, payload any) {
 		log.Printf("Room [%s] broadcast marshal error: %v", r.ID, err)
 		return
 	}
-	r.hub.BroadcastMessage(data)
+	
+	// 直接遍历 clients 发送，保证与 SendTo 的顺序一致性
+	for _, client := range r.clients {
+		client.SendMessage(data)
+	}
 }
 
 // SendTo 私发给游戏内的特定玩家

@@ -10,6 +10,7 @@ type StateUpdateSnapshot struct {
 	HandCount  int `json:"hand_count"`  // 当前是第几局游戏
 	ButtonSeat int `json:"button_seat"` // 庄家 (Button) 所在的座位号
 	MaxPlayers int `json:"max_players"` // 房间最大玩家数（座位数）
+	BigBlind   int `json:"big_blind"`   // 大盲注金额
 
 	// --- 局内状态 (如果 stage == WAITING，这些字段通常为默认值) ---
 	Stage              HandStage        `json:"stage"`                      // 当前游戏阶段 (如 PREFLOP, FLOP 等)
@@ -118,6 +119,7 @@ func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 		HandCount:  len(t.Histories),
 		ButtonSeat: t.ButtonSeat,
 		MaxPlayers: len(t.Seats),
+		BigBlind:   t.BigBlind,
 		IsPaused:   t.IsPaused,
 		Players:    make([]PlayerSnapshot, 0),
 		Histories:  t.Histories,
@@ -125,6 +127,7 @@ func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 
 	// 1. 映射单局状态 (如果正在游戏中的话，或者刚刚结束但还未清理牌桌)
 	if t.CurrentHand != nil {
+		snap.HandCount = t.CurrentHand.HandCount
 		snap.Stage = t.CurrentHand.Stage
 		snap.Pot = t.CurrentHand.Pot
 		snap.CurrentBet = t.CurrentHand.CurrentBet
@@ -153,6 +156,15 @@ func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 	// 2. 映射玩家列表并进行【数据脱敏】
 	// 获取所有活跃玩家的位置映射 (Key: UserID, Value: PositionType)
 	playerPosMap := t.getPlayerPositions()
+
+	// 判断是否正在进行开局倒计时
+	isCountingDown := t.countdownTimer.IsActive()
+
+	if isCountingDown {
+		snap.BoardCards = nil
+		snap.Pot = 0
+		snap.ShowdownSummary = nil
+	}
 
 	for seatIdx, p := range t.Seats {
 		if p == nil {
@@ -186,8 +198,8 @@ func (t *Table) buildSnapshotBase(viewerID string) StateUpdateSnapshot {
 
 		if canSeeCards {
 			pSnap.HoleCards = p.HoleCards
-		} else if snap.Stage == "WAITING" && len(t.Histories) > 0 {
-			// 在等待阶段，尝试从历史记录中恢复亮出的底牌
+		} else if snap.Stage == "WAITING" && len(t.Histories) > 0 && !isCountingDown {
+			// 在等待阶段且未进入倒计时，尝试从历史记录中恢复亮出的底牌
 			lastHistory := t.Histories[len(t.Histories)-1]
 			for _, res := range lastHistory.PlayerResults {
 				if res.PlayerID == p.User.ID && len(res.Cards) > 0 {

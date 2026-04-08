@@ -118,3 +118,17 @@ func (pt *PausableTimer) Resume() time.Duration {
 	}
 	return 0
 }
+
+// Remaining 返回定时器剩余时间
+func (pt *PausableTimer) Remaining() time.Duration {
+	if pt.remaining > 0 {
+		return pt.remaining
+	}
+	if pt.timer != nil && !pt.deadline.IsZero() {
+		rem := time.Until(pt.deadline)
+		if rem > 0 {
+			return rem
+		}
+	}
+	return 0
+}

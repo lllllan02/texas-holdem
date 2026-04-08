@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { History, ChevronDown, ChevronUp } from 'lucide-react'
 import type { ShowdownSummary } from '../types/game'
 import { PlayingCard } from './PlayingCard'
+import { PlayerResultList } from './PlayerResultList'
 
 interface HistoryModalProps {
   show: boolean;
@@ -19,7 +20,8 @@ export function HistoryModal({ show, onClose, userId, histories }: HistoryModalP
   if (!show) return null;
 
   const getHandRankName = (rank: number) => {
-    return ['高牌', '一对', '两对', '三条', '顺子', '同花', '葫芦', '四条', '同花顺', '皇家同花顺'][rank - 1] || '未知牌型';
+    if (rank < 0) return '';
+    return ['高牌', '一对', '两对', '三条', '顺子', '同花', '葫芦', '四条', '同花顺', '皇家同花顺'][rank] || '未知牌型';
   };
 
   return (
@@ -111,42 +113,7 @@ export function HistoryModal({ show, onClose, userId, histories }: HistoryModalP
                         </div>
                       )}
 
-                      <div className="space-y-2">
-                        {/* 排序：赢家在前，然后按盈亏降序 */}
-                        {[...history.player_results].sort((a, b) => {
-                          if (a.is_winner && !b.is_winner) return -1;
-                          if (!a.is_winner && b.is_winner) return 1;
-                          return b.net_profit - a.net_profit;
-                        }).map((detail, idx) => {
-                          const isMe = detail.player_id === userId;
-                          return (
-                            <div key={idx} className={`flex justify-between items-center p-2 rounded border ${detail.is_winner ? 'border-green-700/50 bg-green-900/20' : 'border-gray-800 bg-gray-800/30'}`}>
-                              <div className="flex items-center gap-2">
-                                <span className={`text-sm ${isMe ? 'text-blue-400 font-bold' : 'text-white'}`}>
-                                  {detail.player_name} {isMe && '(You)'}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-3">
-                                {detail.cards && detail.cards.length > 0 ? (
-                                  <div className="flex gap-1 mr-2">
-                                    {detail.cards.map((c, i) => (
-                                      <PlayingCard key={i} card={c} className="scale-[0.5] sm:scale-[0.6] origin-center" />
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-500 text-xs italic mr-2">未亮牌</span>
-                                )}
-                                {detail.hand_rank > 0 && (
-                                  <span className="text-gray-400 text-xs">{getHandRankName(detail.hand_rank)}</span>
-                                )}
-                                <span className={`${detail.net_profit > 0 ? 'text-green-400' : detail.net_profit < 0 ? 'text-red-400' : 'text-gray-500'} font-bold text-sm w-16 text-right`}>
-                                  {detail.net_profit > 0 ? '+' : ''}{detail.net_profit}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <PlayerResultList results={history.player_results} currentUserId={userId} />
                     </div>
                   )}
                 </div>

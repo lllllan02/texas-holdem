@@ -60,6 +60,7 @@ func (t *Table) startNewHand() error {
 		p.ChipsBeforeHand = p.Chips
 		p.CurrentBet = 0
 		p.HasActedThisRound = false
+		p.BestHand = nil
 
 		// 发牌：从小盲 (i=1) 开始顺时针发牌
 		cards, err := t.CurrentHand.Deck.Draw(2)
@@ -133,11 +134,54 @@ func (t *Table) notifyCurrentPlayer(timeoutSeconds int) {
 		return
 	}
 
+	// 如果玩家已离线（托管状态），为了不让其他玩家干等，将思考时间缩短为配置的 OfflineTimeout
+	actualTimeout := timeoutSeconds
+	if player.IsOffline && actualTimeout > t.OfflineTimeout {
+		actualTimeout = t.OfflineTimeout
+	}
+
+	payload := t.buildTurnNotificationPayload(player, actualTimeout)
+
+	// 广播行动通知，告诉所有人轮到谁了，以及倒计时是多少
+	t.messenger.Broadcast(MsgTypeTurnNotification, "turn_notification", payload)
+
+	// 启动玩家行动超时定时器
+	// 注意：这里不再需要手动创建 time.AfterFunc，而是交给 PausableTimer 统一管理
+	timeoutDuration := time.Duration(actualTimeout) * time.Second
+	currentPlayerID := player.User.ID
+	
+	// 计算 callAmount 用于超时自动操作
+	callAmount := t.CurrentHand.CurrentBet - player.CurrentBet
+
+	t.actionTimer.Start(timeoutDuration, func() {
+		t.messenger.Execute(func() {
+			// 超时自动操作 (通常是 Check 或 Fold)
+			// 再次检查是否仍然是该玩家的回合
+			if t.CurrentHand != nil && t.CurrentHand.CurrentPlayerIndex != -1 {
+				currentPlayer := t.Seats[t.CurrentHand.CurrentPlayerIndex]
+				if currentPlayer != nil && currentPlayer.User.ID == currentPlayerID {
+					// 如果可以 Check 就 Check，否则 Fold
+					autoAction := ActionTypeFold
+					if callAmount == 0 {
+						autoAction = ActionTypeCheck
+					}
+
+					// 注意：这里不再因为玩家单次超时就将其标记为离线(IsOffline=true)
+					// 只有当玩家真正断开 WebSocket 连接时，OnPlayerLeave 才会将其标记为离线
+					// 这样可以避免玩家只是思考超时就被踢出座位
+
+					t.processPlayerAction(currentPlayerID, autoAction, 0)
+				}
+			}
+		})
+	})
+}
+
+func (t *Table) buildTurnNotificationPayload(player *Player, timeoutSeconds int) TurnNotificationPayload {
 	// 计算可用的动作和金额限制
 	callAmount := t.CurrentHand.CurrentBet - player.CurrentBet
 
 	var validActions []ActionType
-
 	details := ActionDetails{}
 
 	if callAmount == 0 {
@@ -179,49 +223,12 @@ func (t *Table) notifyCurrentPlayer(timeoutSeconds int) {
 		details.AllinAmount = player.Chips + player.CurrentBet
 	}
 
-	// 如果玩家已离线（托管状态），为了不让其他玩家干等，将思考时间缩短为配置的 OfflineTimeout
-	actualTimeout := timeoutSeconds
-	if player.IsOffline && actualTimeout > t.OfflineTimeout {
-		actualTimeout = t.OfflineTimeout
-	}
-
-	payload := TurnNotificationPayload{
+	return TurnNotificationPayload{
 		PlayerID:       player.User.ID,
 		ValidActions:   validActions,
 		ActionDetails:  details,
-		TimeoutSeconds: actualTimeout,
+		TimeoutSeconds: timeoutSeconds,
 	}
-
-	// 广播行动通知，告诉所有人轮到谁了，以及倒计时是多少
-	t.messenger.Broadcast(MsgTypeTurnNotification, "turn_notification", payload)
-
-	// 启动玩家行动超时定时器
-	// 注意：这里不再需要手动创建 time.AfterFunc，而是交给 PausableTimer 统一管理
-	timeoutDuration := time.Duration(actualTimeout) * time.Second
-	currentPlayerID := player.User.ID
-
-	t.actionTimer.Start(timeoutDuration, func() {
-		t.messenger.Execute(func() {
-			// 超时自动操作 (通常是 Check 或 Fold)
-			// 再次检查是否仍然是该玩家的回合
-			if t.CurrentHand != nil && t.CurrentHand.CurrentPlayerIndex != -1 {
-				currentPlayer := t.Seats[t.CurrentHand.CurrentPlayerIndex]
-				if currentPlayer != nil && currentPlayer.User.ID == currentPlayerID {
-					// 如果可以 Check 就 Check，否则 Fold
-					autoAction := ActionTypeFold
-					if callAmount == 0 {
-						autoAction = ActionTypeCheck
-					}
-
-					// 注意：这里不再因为玩家单次超时就将其标记为离线(IsOffline=true)
-					// 只有当玩家真正断开 WebSocket 连接时，OnPlayerLeave 才会将其标记为离线
-					// 这样可以避免玩家只是思考超时就被踢出座位
-
-					t.processPlayerAction(currentPlayerID, autoAction, 0)
-				}
-			}
-		})
-	})
 }
 
 // processPlayerAction 处理玩家的具体下注/弃牌动作
@@ -390,7 +397,7 @@ func (t *Table) earlyFinish(winner *Player) {
 	t.Histories = append(t.Histories, summary)
 
 	// 5. 延迟清理牌桌，给前端时间展示赢家收筹码的动画
-	t.showdownTimer.Start(3*time.Second, func() {
+	t.showdownTimer.Start(2*time.Second, func() {
 		t.messenger.Execute(func() {
 			for seatIdx, p := range t.Seats {
 				if p != nil {
@@ -408,7 +415,7 @@ func (t *Table) earlyFinish(winner *Player) {
 					}
 					// 游戏结束后，保留玩家的底牌、下注状态，直到下一局开始时才重置
 					// 这样前端在 WAITING 阶段依然可以渲染出上一局结束时的牌桌状态
-					p.State = PlayerStateWaiting
+					// p.State = PlayerStateWaiting
 					// p.HoleCards = nil
 					// p.CurrentBet = 0
 					// p.HasActedThisRound = false
@@ -642,7 +649,7 @@ func (t *Table) handleShowdown() {
 	// 3. 弹出结算面板展示各家牌型
 	// 如果没有这个延迟，前端收到 showdown 消息后瞬间又会收到 hand_finished 消息，
 	// 导致牌桌瞬间被清空，玩家看不清结算结果。
-	t.showdownTimer.Start(5*time.Second, func() {
+	t.showdownTimer.Start(3*time.Second, func() {
 		t.messenger.Execute(func() {
 			// 8. 破产清理、离线清理与重置准备状态
 			for seatIdx, p := range t.Seats {
@@ -661,7 +668,7 @@ func (t *Table) handleShowdown() {
 					}
 					// 游戏结束后，保留玩家的底牌、下注状态，直到下一局开始时才重置
 					// 这样前端在 WAITING 阶段依然可以渲染出上一局结束时的牌桌状态
-					p.State = PlayerStateWaiting
+					// p.State = PlayerStateWaiting
 					// p.HoleCards = nil
 					// p.CurrentBet = 0
 					// p.HasActedThisRound = false

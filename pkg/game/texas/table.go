@@ -208,6 +208,21 @@ func (t *Table) OnPlayerJoin(u *user.User) {
 	// 3. 发送当前的全局快照给该玩家，以便前端恢复画面
 	snap := t.BuildPersonalSnapshot(u.ID)
 	t.messenger.SendTo(u.ID, MsgTypeStateUpdate, ReasonPlayerJoined, snap)
+
+	// 4. 如果当前正在进行游戏，且正好轮到某位玩家行动，则为其补发行动通知（包含倒计时和可用操作）
+	if t.CurrentHand != nil && t.CurrentHand.CurrentPlayerIndex != -1 {
+		currentPlayer := t.Seats[t.CurrentHand.CurrentPlayerIndex]
+		if currentPlayer != nil {
+			// 计算剩余时间
+			rem := int(t.actionTimer.Remaining().Seconds())
+			if rem < 0 {
+				rem = 0
+			}
+			
+			payload := t.buildTurnNotificationPayload(currentPlayer, rem)
+			t.messenger.SendTo(u.ID, MsgTypeTurnNotification, "turn_notification", payload)
+		}
+	}
 }
 
 // OnPlayerLeave 玩家离开游戏/掉线时调用
@@ -492,6 +507,8 @@ func (t *Table) checkAndAutoStart() {
 	log.Printf("TexasEngine: All players ready, starting 3s countdown for new hand")
 	t.countdownTimer.Start(3*time.Second, func() {
 		t.messenger.Execute(func() {
+			t.countdownTimer.Stop() // 倒计时结束，清理状态，否则 IsActive 会一直为 true 导致公牌被隐藏
+			
 			// 倒计时结束后，尝试开始新的一局
 			if err := t.startNewHand(); err != nil {
 				// 如果开局失败（比如有人在倒计时结束瞬间掉线导致不满员），广播错误并重置状态
@@ -504,5 +521,7 @@ func (t *Table) checkAndAutoStart() {
 		})
 	})
 
+	// 倒计时开始时，广播清空了历史数据的状态快照
+	t.messenger.Broadcast(MsgTypeStateUpdate, "countdown_started", t.BuildPublicSnapshot())
 	t.messenger.Broadcast(MsgTypeCountdown, "start_countdown", CountdownPayload{Seconds: 3})
 }

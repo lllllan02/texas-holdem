@@ -134,7 +134,7 @@ func (m *RoomManager) GetUserActiveRooms(userID string) []map[string]interface{}
 
 	userRooms := m.userRoomManager.GetUserRooms(userID)
 	if userRooms == nil {
-		return nil
+		return make([]map[string]interface{}, 0)
 	}
 
 	result := make([]map[string]interface{}, 0, len(userRooms))

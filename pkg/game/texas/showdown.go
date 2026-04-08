@@ -16,6 +16,7 @@ type PlayerHandResult struct {
 	PlayerName string   `json:"player_name"` // 冗余昵称，防止玩家离桌后找不到
 	NetProfit  int      `json:"net_profit"`  // 净盈亏（正数表示赢了多少，负数表示这局输了多少）
 	Cards      []Card   `json:"cards"`       // 玩家底牌（如果未摊牌则为空）
+	BestCards  []Card   `json:"best_cards,omitempty"` // 最佳5张牌
 	HandRank   HandRank `json:"hand_rank"`   // 最终牌型（如 4 代表顺子）
 	IsWinner   bool     `json:"is_winner"`   // 是否赢得了任何奖池（主池或边池）
 }
@@ -58,10 +59,14 @@ func (t *Table) buildShowdownSummary(showCards bool) *ShowdownSummary {
 
 			// 如果不亮牌，且不是赢家，底牌可以隐藏（根据具体需求，这里统一返回底牌，前端根据 ShowCards 决定是否展示）
 			var cards []Card
+			var bestCards []Card
 			// 只有在正常摊牌阶段 (showCards == true) 且玩家没有弃牌时，才展示其底牌
 			// 提前结束时，所有人（包括赢家和弃牌玩家）都不亮牌
 			if showCards && p.State != PlayerStateFolded {
 				cards = p.HoleCards
+				if p.BestHand != nil {
+					bestCards = p.BestHand.BestCards
+				}
 			}
 
 			summary.PlayerResults = append(summary.PlayerResults, PlayerHandResult{
@@ -69,6 +74,7 @@ func (t *Table) buildShowdownSummary(showCards bool) *ShowdownSummary {
 				PlayerName: p.User.Nickname,
 				NetProfit:  netProfit,
 				Cards:      cards,
+				BestCards:  bestCards,
 				HandRank:   rank,
 				IsWinner:   winnerMap[p.User.ID],
 			})

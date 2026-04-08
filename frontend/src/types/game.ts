@@ -34,6 +34,7 @@ export interface PlayerHandResult {
   player_name: string;
   net_profit: number;
   cards: Card[];
+  best_cards?: Card[];
   hand_rank: number;
   is_winner: boolean;
 }
@@ -76,6 +77,7 @@ export interface StateUpdateSnapshot {
   hand_count: number;
   button_seat: number;
   max_players: number;
+  big_blind: number;
   stage: 'WAITING' | 'PREFLOP' | 'FLOP' | 'TURN' | 'RIVER' | 'SHOWDOWN';
   pot: number;
   current_bet: number;
