@@ -40,9 +40,9 @@ export function HistoryModal({ show, onClose, userId, histories }: HistoryModalP
           </button>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 min-h-0">
           {histories.length === 0 ? (
-            <div className="text-center text-gray-500 text-sm py-8">
+            <div className="text-center text-gray-500 text-sm py-8 shrink-0">
               暂无对局记录
             </div>
           ) : (
@@ -53,50 +53,50 @@ export function HistoryModal({ show, onClose, userId, histories }: HistoryModalP
               const winners = history.player_results.filter(r => r.is_winner);
               
               return (
-                <div key={history.hand_id} className="bg-gray-900/50 rounded-lg border border-gray-700 overflow-hidden">
+                <div key={history.hand_id} className="bg-gray-900/50 rounded-lg border border-gray-700 overflow-hidden shrink-0">
                   <div 
                     className="flex justify-between items-center p-3 cursor-pointer hover:bg-gray-800/80 transition-colors"
                     onClick={() => setExpandedHistoryId(isExpanded ? null : history.hand_id)}
                   >
-                    <div className="flex items-center gap-3">
-                      <span className="text-gray-400 text-sm font-mono w-20">第 {history.hand_id} 局</span>
-                      <div className="flex flex-col gap-1">
-                        {winners.slice(0, 1).map((winner, idx) => {
-                          const isMe = winner.player_id === userId;
-                          return (
-                            <div key={idx} className="flex items-center gap-2 text-xs">
-                              <span className={`font-medium ${isMe ? 'text-blue-400' : 'text-gray-300'}`}>
-                                {winner.player_name} {isMe && '(You)'}
-                              </span>
-                              
-                              {winner.cards && winner.cards.length > 0 && (
-                                <>
-                                  <span className="text-gray-600">|</span>
-                                  <div className="flex gap-0.5">
-                                    {winner.cards.map((c, i) => (
-                                      <PlayingCard key={i} card={c} className="scale-[0.4] origin-left -mr-4" />
-                                    ))}
+                      <div className="flex items-center gap-3">
+                        <span className="text-gray-400 text-sm font-mono w-16 shrink-0">第 {history.hand_id} 局</span>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          {winners.slice(0, 1).map((winner, idx) => {
+                            const isMe = winner.player_id === userId;
+                            return (
+                              <div key={idx} className="flex items-center gap-2 text-xs">
+                                <span className={`font-medium ${isMe ? 'text-blue-400' : 'text-gray-300'}`}>
+                                  {winner.player_name} {isMe && '(You)'}
+                                </span>
+                                
+                                {winner.cards && winner.cards.length > 0 && (
+                                  <div className="flex items-center h-6 overflow-hidden">
+                                    <span className="text-gray-600 mr-2">|</span>
+                                    <div className="flex gap-0.5 w-12">
+                                      {winner.cards.map((c, i) => (
+                                        <PlayingCard key={i} card={c} className="scale-[0.35] origin-left -mr-5" />
+                                      ))}
+                                    </div>
                                   </div>
-                                </>
-                              )}
-                              
-                              {winner.hand_rank > 0 && (
-                                <>
-                                  <span className="text-gray-600">|</span>
-                                  <span className="text-gray-400">{getHandRankName(winner.hand_rank)}</span>
-                                </>
-                              )}
-                              
-                              <span className="text-gray-600">|</span>
-                              <span className="text-green-400 font-bold">+{winner.net_profit}</span>
-                            </div>
-                          );
-                        })}
-                        {winners.length > 1 && (
-                          <div className="text-xs text-gray-500">等 {winners.length} 人获胜...</div>
-                        )}
+                                )}
+                                
+                                {winner.hand_rank >= 0 && (
+                                  <>
+                                    <span className="text-gray-600">|</span>
+                                    <span className="text-gray-400">{getHandRankName(winner.hand_rank)}</span>
+                                  </>
+                                )}
+                                
+                                <span className="text-gray-600">|</span>
+                                <span className="text-green-400 font-bold">+{winner.net_profit}</span>
+                              </div>
+                            );
+                          })}
+                          {winners.length > 1 && (
+                            <div className="text-[10px] text-gray-500 bg-gray-800 px-1.5 py-0.5 rounded">等 {winners.length} 人获胜</div>
+                          )}
+                        </div>
                       </div>
-                    </div>
                     <div className="flex items-center gap-4">
                       <span className="text-gray-400 font-bold text-sm">底池: ${history.total_pot}</span>
                       {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
@@ -106,14 +106,16 @@ export function HistoryModal({ show, onClose, userId, histories }: HistoryModalP
                   {isExpanded && (
                     <div className="p-4 border-t border-gray-800 bg-gray-900/30">
                       {history.board_cards && history.board_cards.length > 0 && (
-                        <div className="flex gap-2 mb-4 justify-center">
+                        <div className="flex gap-2 mb-6 justify-center py-4 bg-black/20 rounded-lg border border-gray-800/50">
                           {history.board_cards.map((card, idx) => (
-                            <PlayingCard key={idx} card={card} className="scale-[0.8] sm:scale-100 origin-top" />
+                            <PlayingCard key={idx} card={card} className="scale-[0.8] sm:scale-90 origin-center" />
                           ))}
                         </div>
                       )}
 
-                      <PlayerResultList results={history.player_results} currentUserId={userId} />
+                      <div className="mt-2">
+                        <PlayerResultList results={history.player_results} currentUserId={userId} />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -122,7 +124,7 @@ export function HistoryModal({ show, onClose, userId, histories }: HistoryModalP
           )}
           
           {histories.length > 0 && (
-            <div className="text-center text-gray-500 text-sm py-4">
+            <div className="text-center text-gray-500 text-sm py-4 shrink-0">
               没有更多记录了
             </div>
           )}

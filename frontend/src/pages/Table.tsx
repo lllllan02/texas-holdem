@@ -570,6 +570,7 @@ export default function Table() {
                   const player = gameState.players?.find(p => p.seat_number === index);
                           const isMySeat = player?.id === user?.id;
                   const isActivePlayer = gameState.current_player_index === index && gameState.stage !== 'WAITING' && gameState.stage !== 'SHOWDOWN';
+                  const isFolded = player?.state === 'folded';
                   const position = getSeatPosition(gameState.max_players || 9, index);
 
                   return (
@@ -579,7 +580,7 @@ export default function Table() {
                       style={{ ...position, zIndex: isActivePlayer ? 60 : 50 }}
                     >
                       {player ? (
-                        <div className="flex flex-col items-center group relative">
+                        <div className={`flex flex-col items-center group relative transition-all duration-500 ${isFolded ? 'opacity-40 grayscale-[0.8] scale-95' : ''}`}>
                           {/* 玩家头像和信息 */}
                           <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full border-4 ${
                             isActivePlayer ? 'border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.8)]' : 
@@ -591,6 +592,15 @@ export default function Table() {
                               <span className="text-xl font-bold text-gray-400">{player.name[0]?.toUpperCase()}</span>
                             )}
                             
+                            {/* 弃牌斜向印章 */}
+                            {isFolded && (
+                              <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                                <div className="border-2 border-red-500 text-red-500 text-[10px] font-black px-1 py-0.5 rounded rotate-[-25deg] uppercase tracking-tighter bg-black/40 backdrop-blur-[1px]">
+                                  FOLDED
+                                </div>
+                              </div>
+                            )}
+
                             {/* 离线遮罩 */}
                             {player.is_offline && (
                               <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
@@ -616,7 +626,11 @@ export default function Table() {
 
                           {/* 状态标签 */}
                           {player.state !== 'waiting' && player.state !== 'active' && (
-                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap shadow-md z-40">
+                            <div className={`absolute -top-3 left-1/2 -translate-x-1/2 text-white text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap shadow-md z-40 transition-colors ${
+                              player.state === 'folded' ? 'bg-gray-600' : 
+                              player.state === 'allin' ? 'bg-red-600 animate-pulse' : 
+                              'bg-blue-600'
+                            }`}>
                               {player.state === 'ready' ? '已准备' : player.state === 'folded' ? '已弃牌' : player.state === 'allin' ? 'All-in' : player.state}
                             </div>
                           )}

@@ -38,7 +38,7 @@ export function PlayerResultList({ results, currentUserId }: PlayerResultListPro
               ) : (
                 <span className="text-gray-500 text-xs italic mr-2">未亮牌</span>
               )}
-              {result.hand_rank >= 0 && (
+              {result.hand_rank >= 0 && result.cards && result.cards.length > 0 && (
                 <span className="text-gray-400 text-xs">
                   {getHandRankName(result.hand_rank)}
                 </span>

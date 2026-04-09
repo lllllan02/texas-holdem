@@ -19,9 +19,10 @@ const (
 // HandRank 牌型等级（数字越大牌型越大）
 type HandRank int
 
-const (
-	HandRankHighCard      HandRank = iota // 0: 高牌 (High Card)
-	HandRankPair                          // 1: 一对 (One Pair)
+	const (
+		HandRankNone          HandRank = -1 // -1: 未公开 (None)
+		HandRankHighCard      HandRank = iota // 0: 高牌 (High Card)
+		HandRankPair                          // 1: 一对 (One Pair)
 	HandRankTwoPair                       // 2: 两对 (Two Pair)
 	HandRankThreeOfAKind                  // 3: 三条 (Three of a Kind)
 	HandRankStraight                      // 4: 顺子 (Straight)

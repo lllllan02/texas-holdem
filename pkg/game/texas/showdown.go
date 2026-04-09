@@ -67,6 +67,9 @@ func (t *Table) buildShowdownSummary(showCards bool) *ShowdownSummary {
 				if p.BestHand != nil {
 					bestCards = p.BestHand.BestCards
 				}
+			} else {
+				// 如果不亮牌，则不应返回具体的牌型 rank，避免用户通过抓包查看到弃牌玩家的牌力
+				rank = HandRankNone // 使用 -1 表示未公开牌型
 			}
 
 			summary.PlayerResults = append(summary.PlayerResults, PlayerHandResult{
